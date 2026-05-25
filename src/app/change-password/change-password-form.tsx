@@ -1,0 +1,95 @@
+"use client";
+
+import { useState, useTransition } from "react";
+import { useRouter } from "next/navigation";
+import { toast } from "sonner";
+import { Loader2 } from "lucide-react";
+import { authClient } from "@/lib/auth-client";
+import { clearMustChangePwdAction } from "@/server/actions/me";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+
+export function ChangePasswordForm({ forced }: { forced: boolean }) {
+  const router = useRouter();
+  const [pending, startTransition] = useTransition();
+  const [current, setCurrent] = useState("");
+  const [next, setNext] = useState("");
+  const [confirm, setConfirm] = useState("");
+
+  function handleSubmit(e: React.FormEvent) {
+    e.preventDefault();
+    if (next.length < 6) {
+      toast.error("新密码至少 6 位");
+      return;
+    }
+    if (next !== confirm) {
+      toast.error("两次输入不一致");
+      return;
+    }
+    startTransition(async () => {
+      const { error } = await authClient.changePassword({
+        currentPassword: current,
+        newPassword: next,
+        revokeOtherSessions: true,
+      });
+      if (error) {
+        toast.error(error.message ?? "改密失败");
+        return;
+      }
+      const res = await clearMustChangePwdAction();
+      if (!res.ok) {
+        toast.error("更新状态失败,请重新登录");
+        return;
+      }
+      toast.success("密码已更新");
+      router.push("/");
+      router.refresh();
+    });
+  }
+
+  return (
+    <form onSubmit={handleSubmit} className="space-y-4">
+      <div className="space-y-2">
+        <Label htmlFor="current">当前密码</Label>
+        <Input
+          id="current"
+          type="password"
+          value={current}
+          onChange={(e) => setCurrent(e.target.value)}
+          autoComplete="current-password"
+          required
+          autoFocus
+        />
+      </div>
+      <div className="space-y-2">
+        <Label htmlFor="next">新密码</Label>
+        <Input
+          id="next"
+          type="password"
+          value={next}
+          onChange={(e) => setNext(e.target.value)}
+          autoComplete="new-password"
+          minLength={6}
+          required
+        />
+      </div>
+      <div className="space-y-2">
+        <Label htmlFor="confirm">确认新密码</Label>
+        <Input
+          id="confirm"
+          type="password"
+          value={confirm}
+          onChange={(e) => setConfirm(e.target.value)}
+          autoComplete="new-password"
+          minLength={6}
+          required
+        />
+      </div>
+      <Button type="submit" className="w-full" disabled={pending} size="lg">
+        {pending && <Loader2 className="size-4 animate-spin" />}
+        {pending ? "提交中" : forced ? "设置新密码并继续" : "确认修改"}
+      </Button>
+    </form>
+  );
+}

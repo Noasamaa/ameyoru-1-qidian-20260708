@@ -1,0 +1,81 @@
+"use client";
+
+import { useState, useTransition } from "react";
+import { useRouter } from "next/navigation";
+import { toast } from "sonner";
+import { Loader2, Lock, User } from "lucide-react";
+import { authClient } from "@/lib/auth-client";
+import { Button } from "@/components/ui/button";
+import { InputWithIcon } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+
+export function LoginForm() {
+  const router = useRouter();
+  const [pending, startTransition] = useTransition();
+  const [username, setUsername] = useState("");
+  const [password, setPassword] = useState("");
+  const [rememberMe, setRememberMe] = useState(true);
+
+  function handleSubmit(e: React.FormEvent) {
+    e.preventDefault();
+    startTransition(async () => {
+      const { error } = await authClient.signIn.username({
+        username: username.trim(),
+        password,
+        rememberMe,
+      });
+      if (error) {
+        toast.error(error.message ?? "用户名或密码错误");
+        return;
+      }
+      router.push("/");
+      router.refresh();
+    });
+  }
+
+  return (
+    <form onSubmit={handleSubmit} className="space-y-5">
+      <div className="space-y-2">
+        <Label htmlFor="username">用户名</Label>
+        <InputWithIcon
+          id="username"
+          icon={<User />}
+          value={username}
+          onChange={(e) => setUsername(e.target.value)}
+          placeholder="请输入用户名"
+          autoComplete="username"
+          autoFocus
+          required
+        />
+      </div>
+      <div className="space-y-2">
+        <Label htmlFor="password">密码</Label>
+        <InputWithIcon
+          id="password"
+          icon={<Lock />}
+          type="password"
+          value={password}
+          onChange={(e) => setPassword(e.target.value)}
+          placeholder="请输入密码"
+          autoComplete="current-password"
+          required
+        />
+      </div>
+
+      <label className="flex cursor-pointer items-center gap-2 text-sm text-muted-foreground select-none">
+        <input
+          type="checkbox"
+          checked={rememberMe}
+          onChange={(e) => setRememberMe(e.target.checked)}
+          className="size-4 rounded border-input accent-primary"
+        />
+        <span>30 天内免登录</span>
+      </label>
+
+      <Button type="submit" className="w-full" size="lg" disabled={pending}>
+        {pending && <Loader2 className="size-4 animate-spin" />}
+        {pending ? "登录中" : "立即登录"}
+      </Button>
+    </form>
+  );
+}
