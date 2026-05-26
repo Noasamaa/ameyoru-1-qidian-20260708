@@ -1,6 +1,7 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
+import { eq } from "drizzle-orm";
 import { z } from "zod";
 import { db } from "@/db";
 import { playerInvite } from "@/db/schema";
@@ -47,5 +48,19 @@ export async function createPlayerInviteAction(
   });
 
   revalidatePath("/players");
+  revalidatePath("/staff");
   return { ok: true as const, token };
+}
+
+export async function deletePlayerInviteAction({ id }: { id: string }) {
+  await requireSession({ role: ["BOSS", "STAFF"] });
+  const target = await db
+    .select({ id: playerInvite.id })
+    .from(playerInvite)
+    .where(eq(playerInvite.id, id))
+    .get();
+  if (!target) return { ok: false as const, error: "链接不存在" };
+  await db.delete(playerInvite).where(eq(playerInvite.id, id));
+  revalidatePath("/staff");
+  return { ok: true as const };
 }

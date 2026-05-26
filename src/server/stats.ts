@@ -206,7 +206,14 @@ export async function leaderboard(range: RangeKey): Promise<LeaderboardRow[]> {
       )
     )
     .groupBy(order.playerId)
-    .orderBy(desc(count()));
+    // 主指标:总时长(一单 30 小时比 30 单 1 小时强)
+    // 次级:流水高的优先
+    // 三级:同时长同流水,完成得更早的靠前
+    .orderBy(
+      desc(sum(order.durationMin)),
+      desc(sum(order.payableCents)),
+      sql`max(${order.completedAt}) asc`
+    );
 
   return rows.map((r) => ({
     playerId: r.playerId,

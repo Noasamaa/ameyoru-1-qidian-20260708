@@ -147,7 +147,18 @@ export async function createOrderAction(input: CreateOrderInput) {
     return { ok: false as const, error: "时间格式无效" };
   }
 
-  const hourlyRateCents = yuanStringToCents(data.hourlyRateYuan);
+  // 陪玩自报:单价强制使用老板设的 defaultRateCents,忽略前端传值(防篡改)
+  let hourlyRateCents: number;
+  if (me.role === "PLAYER") {
+    const p = await db
+      .select({ defaultRateCents: user.defaultRateCents })
+      .from(user)
+      .where(eq(user.id, me.id))
+      .get();
+    hourlyRateCents = p?.defaultRateCents ?? 0;
+  } else {
+    hourlyRateCents = yuanStringToCents(data.hourlyRateYuan);
+  }
   if (hourlyRateCents <= 0) {
     return { ok: false as const, error: "单价必须大于 0" };
   }
@@ -249,6 +260,152 @@ export async function createOrderAction(input: CreateOrderInput) {
   };
 }
 
+/**
+ * 陪玩端"开始接单"快速建单:只填客户名,startAt=now,时长 / 金额初始化为 0。
+ * 配合 endQuickOrderAction 使用,真实时长在结束时根据实际经过时间算出。
+ */
+export async function startQuickOrderAction(input: { customerName: string }) {
+  const { user: me } = await requireSession({ role: "PLAYER" });
+
+  const customerName = input.customerName?.trim();
+  if (!customerName) {
+    return { ok: false as const, error: "请填写客户名" };
+  }
+
+  const player = await db
+    .select({ defaultRateCents: user.defaultRateCents })
+    .from(user)
+    .where(eq(user.id, me.id))
+    .get();
+  const hourlyRateCents = player?.defaultRateCents ?? 0;
+  if (hourlyRateCents <= 0) {
+    return {
+      ok: false as const,
+      error: "请先在「个人设置」里填默认单价,或走「报单」走完整流程",
+    };
+  }
+
+  // 同时只允许一个进行中的订单,避免开始按钮反复点出脏数据
+  const existing = await db
+    .select({ id: order.id })
+    .from(order)
+    .where(and(eq(order.playerId, me.id), eq(order.orderStatus, "IN_PROGRESS")))
+    .get();
+  if (existing) {
+    return {
+      ok: false as const,
+      error: "你已有进行中的订单,先结束再开始下一单",
+    };
+  }
+
+  let customerRec: Awaited<ReturnType<typeof findOrCreateCustomer>>;
+  try {
+    customerRec = await findOrCreateCustomer({ name: customerName });
+  } catch (e) {
+    return {
+      ok: false as const,
+      error: e instanceof Error ? e.message : "客户错误",
+    };
+  }
+
+  const id = nanoid();
+  const now = new Date();
+  await db.insert(order).values({
+    id,
+    dispatcherId: me.id,
+    playerId: me.id,
+    customerId: customerRec.id,
+    startAt: now,
+    endAt: now,
+    durationMin: 0,
+    hourlyRateCents,
+    commissionPerHourCents: DEFAULT_COMMISSION_PER_HOUR_CENTS,
+    originalCents: 0,
+    discountCents: 0,
+    payableCents: 0,
+    prepayUsedCents: 0,
+    commissionCents: 0,
+    playerEarnCents: 0,
+    orderStatus: "IN_PROGRESS",
+    settleStatus: "UNSETTLED",
+  });
+
+  invalidatePages(id);
+  // 进行中阶段不推企微(金额还是 0),等 endQuickOrderAction 完成时再推完成通知
+  return {
+    ok: true as const,
+    id,
+    newCustomer: customerRec.isNew
+      ? { name: customerRec.name, memberNo: customerRec.memberNo }
+      : null,
+  };
+}
+
+/**
+ * 陪玩端"结束接单":根据 startAt 到 now 的实际经过时间重算时长 / 金额,
+ * 把订单标记为 COMPLETED。
+ */
+export async function endQuickOrderAction(input: { id: string }) {
+  const { user: me } = await requireSession({ role: "PLAYER" });
+
+  const target = await db
+    .select({
+      id: order.id,
+      playerId: order.playerId,
+      orderStatus: order.orderStatus,
+      startAt: order.startAt,
+      hourlyRateCents: order.hourlyRateCents,
+    })
+    .from(order)
+    .where(eq(order.id, input.id))
+    .get();
+  if (!target) return { ok: false as const, error: "订单不存在" };
+  if (target.playerId !== me.id) {
+    return { ok: false as const, error: "无权操作" };
+  }
+  if (target.orderStatus !== "IN_PROGRESS") {
+    return { ok: false as const, error: "订单已不是进行中状态" };
+  }
+
+  const now = new Date();
+  const computed = computeOrder({
+    startAt: target.startAt,
+    endAt: now,
+    hourlyRateCents: target.hourlyRateCents,
+    discountCents: 0,
+    commissionPerHourCents: DEFAULT_COMMISSION_PER_HOUR_CENTS,
+  });
+  if (computed.durationMin <= 0) {
+    return {
+      ok: false as const,
+      error: "接单时长不足 1 分钟,如需取消请去订单详情",
+    };
+  }
+
+  await db
+    .update(order)
+    .set({
+      endAt: now,
+      durationMin: computed.durationMin,
+      originalCents: computed.originalCents,
+      payableCents: computed.payableCents,
+      commissionCents: computed.commissionCents,
+      playerEarnCents: computed.playerEarnCents,
+      orderStatus: "COMPLETED",
+      completedAt: now,
+    })
+    .where(eq(order.id, target.id));
+
+  invalidatePages(target.id);
+  notifyOrderCompleted({
+    actorName: me.name,
+    payableCents: computed.payableCents,
+    playerEarnCents: computed.playerEarnCents,
+  });
+
+  return { ok: true as const };
+}
+
 export async function completeOrderAction(input: { id: string }) {
   const { user: me } = await requireSession();
   const target = await db
@@ -280,6 +437,86 @@ export async function completeOrderAction(input: { id: string }) {
     playerEarnCents: target.playerEarnCents,
   });
 
+  return { ok: true as const };
+}
+
+/**
+ * 老板/店长:给已完成未结的订单增加时长(例如老板送单)。
+ * 只在 COMPLETED + UNSETTLED 状态下可用。
+ */
+const adjustSchema = z.object({
+  id: z.string(),
+  extraMinutes: z.number().int().min(1, "至少增加 1 分钟"),
+  note: z
+    .string()
+    .max(500)
+    .optional()
+    .transform((s) => s?.trim() || null),
+});
+
+export async function adjustOrderDurationAction(
+  input: z.infer<typeof adjustSchema>
+) {
+  const { user: me } = await requireSession({ role: ["BOSS", "STAFF"] });
+  const parsed = adjustSchema.safeParse(input);
+  if (!parsed.success) {
+    return {
+      ok: false as const,
+      error: parsed.error.errors[0]?.message ?? "参数错误",
+    };
+  }
+
+  const target = await db
+    .select({
+      id: order.id,
+      orderStatus: order.orderStatus,
+      settleStatus: order.settleStatus,
+      startAt: order.startAt,
+      durationMin: order.durationMin,
+      hourlyRateCents: order.hourlyRateCents,
+      commissionPerHourCents: order.commissionPerHourCents,
+      discountCents: order.discountCents,
+      note: order.note,
+    })
+    .from(order)
+    .where(eq(order.id, parsed.data.id))
+    .get();
+  if (!target) return { ok: false as const, error: "订单不存在" };
+  if (target.orderStatus !== "COMPLETED") {
+    return { ok: false as const, error: "只能对已完成的订单增加时长" };
+  }
+  if (target.settleStatus !== "UNSETTLED") {
+    return { ok: false as const, error: "已结算的订单不能修改" };
+  }
+
+  const newDurationMin = target.durationMin + parsed.data.extraMinutes;
+  const newEndAt = new Date(
+    target.startAt.getTime() + newDurationMin * 60000
+  );
+  const computed = computeOrder({
+    startAt: target.startAt,
+    endAt: newEndAt,
+    hourlyRateCents: target.hourlyRateCents,
+    discountCents: target.discountCents,
+    commissionPerHourCents: target.commissionPerHourCents,
+  });
+
+  // prepayUsedCents 不重算:增加时长属于"老板送单",额外费用走现金,不再追扣预存
+  const noteLines = [target.note, parsed.data.note].filter(Boolean);
+  await db
+    .update(order)
+    .set({
+      endAt: newEndAt,
+      durationMin: newDurationMin,
+      originalCents: computed.originalCents,
+      payableCents: computed.payableCents,
+      commissionCents: computed.commissionCents,
+      playerEarnCents: computed.playerEarnCents,
+      note: noteLines.join(" | ") || null,
+    })
+    .where(eq(order.id, target.id));
+
+  invalidatePages(target.id);
   return { ok: true as const };
 }
 

@@ -58,6 +58,7 @@ import type {
   SettleStatus,
 } from "@/db/schema";
 import {
+  adjustOrderDurationAction,
   cancelOrderAction,
   completeOrderAction,
   settleOrderAction,
@@ -311,6 +312,7 @@ function OrderDetailSheet({
   const router = useRouter();
   const [pending, startTransition] = useTransition();
   const [cancelOpen, setCancelOpen] = useState(false);
+  const [adjustOpen, setAdjustOpen] = useState(false);
 
   const canManage = role === "BOSS" || role === "STAFF";
   const canBoss = role === "BOSS" || role === "STAFF";
@@ -321,6 +323,16 @@ function OrderDetailSheet({
       ? order.playerCompensationCents
       : order.playerEarnCents
     : 0;
+  // 已完成 / 已取消有补偿,且未结算 → 管理者可以打款
+  const canSettleNow =
+    !!order &&
+    canManage &&
+    order.settleStatus === "UNSETTLED" &&
+    (order.orderStatus === "COMPLETED" ||
+      (order.orderStatus === "CANCELED" && order.playerCompensationCents > 0));
+  const showQrInContent =
+    canSettleNow &&
+    !!(order?.playerWechatQrPath || order?.playerAlipayQrPath);
 
   function run(
     fn: () => Promise<{ ok: boolean; error?: string }>,
@@ -341,8 +353,8 @@ function OrderDetailSheet({
   return (
     <>
       <Sheet
-        open={!!order && !cancelOpen}
-        onOpenChange={(v) => !v && !cancelOpen && onClose()}
+        open={!!order && !cancelOpen && !adjustOpen}
+        onOpenChange={(v) => !v && !cancelOpen && !adjustOpen && onClose()}
       >
         <SheetContent className="w-full sm:max-w-md flex flex-col gap-0 p-0">
           {order && (
@@ -531,6 +543,28 @@ function OrderDetailSheet({
                     />
                   )}
                 </div>
+
+                {showQrInContent && (
+                  <div className="space-y-2">
+                    <div className="text-xs text-muted-foreground">
+                      陪玩收款码
+                    </div>
+                    <div className="grid gap-2 sm:grid-cols-2">
+                      {order.playerWechatQrPath && (
+                        <QrThumbnail
+                          label="微信收款码"
+                          path={order.playerWechatQrPath}
+                        />
+                      )}
+                      {order.playerAlipayQrPath && (
+                        <QrThumbnail
+                          label="支付宝收款码"
+                          path={order.playerAlipayQrPath}
+                        />
+                      )}
+                    </div>
+                  </div>
+                )}
               </div>
 
               <ActionBar
@@ -546,6 +580,7 @@ function OrderDetailSheet({
                   )
                 }
                 onOpenCancel={() => setCancelOpen(true)}
+                onAdjustDuration={() => setAdjustOpen(true)}
                 onSettle={(method) =>
                   run(
                     () =>
@@ -581,6 +616,21 @@ function OrderDetailSheet({
           }}
         />
       )}
+
+      {order && adjustOpen && (
+        <AdjustDurationDialog
+          orderId={order.id}
+          playerName={order.playerName}
+          customerName={order.customerName}
+          onClose={(succeeded) => {
+            setAdjustOpen(false);
+            if (succeeded) {
+              onClose();
+              router.refresh();
+            }
+          }}
+        />
+      )}
     </>
   );
 }
@@ -593,6 +643,7 @@ function ActionBar({
   pending,
   onComplete,
   onOpenCancel,
+  onAdjustDuration,
   onSettle,
   onUnsettle,
 }: {
@@ -603,6 +654,7 @@ function ActionBar({
   pending: boolean;
   onComplete: () => void;
   onOpenCancel: () => void;
+  onAdjustDuration: () => void;
   onSettle: (method: PayMethod) => void;
   onUnsettle: () => void;
 }) {
@@ -642,23 +694,20 @@ function ActionBar({
         ? order.playerCompensationCents
         : order.playerEarnCents;
     const hasQr = !!(order.playerWechatQrPath || order.playerAlipayQrPath);
+    // 收款码已挪到内容区(详情之下),ActionBar 只保留打款按钮,
+    // 避免在移动端竖屏挤掉「标记已打款」按钮。
     return (
-      <div className="border-t px-6 py-4 space-y-3">
-        {hasQr && (
-          <div className="grid gap-2 sm:grid-cols-2">
-            {order.playerWechatQrPath && (
-              <QrThumbnail
-                label="微信收款码"
-                path={order.playerWechatQrPath}
-              />
-            )}
-            {order.playerAlipayQrPath && (
-              <QrThumbnail
-                label="支付宝收款码"
-                path={order.playerAlipayQrPath}
-              />
-            )}
-          </div>
+      <div className="border-t px-6 py-4 space-y-2">
+        {order.orderStatus === "COMPLETED" && (
+          <Button
+            variant="ghost"
+            size="sm"
+            className="w-full text-muted-foreground"
+            onClick={onAdjustDuration}
+            disabled={pending}
+          >
+            增加时长(如老板送单)
+          </Button>
         )}
         <p className="text-xs text-muted-foreground">
           {hasQr ? "扫码打款后,标记为已结:" : "线下打款后,标记为已结(陪玩还未上传收款码):"}
@@ -862,6 +911,110 @@ function CancelDialog({
               disabled={pending}
             >
               {pending && <Loader2 className="animate-spin" />} 确认取消
+            </Button>
+          </DialogFooter>
+        </form>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+function AdjustDurationDialog({
+  orderId,
+  playerName,
+  customerName,
+  onClose,
+}: {
+  orderId: string;
+  playerName: string;
+  customerName: string;
+  onClose: (succeeded: boolean) => void;
+}) {
+  const [hours, setHours] = useState("");
+  const [minutes, setMinutes] = useState("");
+  const [note, setNote] = useState("老板送单");
+  const [pending, startTransition] = useTransition();
+
+  function handleSubmit(e: React.FormEvent) {
+    e.preventDefault();
+    const h = parseInt(hours || "0", 10);
+    const m = parseInt(minutes || "0", 10);
+    const total = h * 60 + m;
+    if (total <= 0) {
+      toast.error("至少增加 1 分钟");
+      return;
+    }
+    startTransition(async () => {
+      const res = await adjustOrderDurationAction({
+        id: orderId,
+        extraMinutes: total,
+        note: note || null,
+      });
+      if (!res.ok) {
+        toast.error(res.error ?? "增加失败");
+        return;
+      }
+      toast.success(`已增加 ${h > 0 ? `${h}h` : ""}${m > 0 ? `${m}min` : ""}`);
+      onClose(true);
+    });
+  }
+
+  return (
+    <Dialog open onOpenChange={(v) => !v && onClose(false)}>
+      <DialogContent>
+        <DialogHeader>
+          <DialogTitle>增加时长</DialogTitle>
+          <DialogDescription>
+            {playerName} · {customerName} — 增加后会自动重算金额
+          </DialogDescription>
+        </DialogHeader>
+        <form onSubmit={handleSubmit} className="space-y-4">
+          <div className="grid grid-cols-2 gap-3">
+            <div className="space-y-2">
+              <Label htmlFor="adj-hours">增加小时</Label>
+              <Input
+                id="adj-hours"
+                type="number"
+                min="0"
+                value={hours}
+                onChange={(e) => setHours(e.target.value)}
+                placeholder="0"
+              />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="adj-minutes">增加分钟</Label>
+              <Input
+                id="adj-minutes"
+                type="number"
+                min="0"
+                max="59"
+                value={minutes}
+                onChange={(e) => setMinutes(e.target.value)}
+                placeholder="0"
+              />
+            </div>
+          </div>
+          <div className="space-y-2">
+            <Label htmlFor="adj-note">备注(选填)</Label>
+            <Input
+              id="adj-note"
+              value={note}
+              onChange={(e) => setNote(e.target.value)}
+              maxLength={500}
+              placeholder="例如:老板送单"
+            />
+          </div>
+          <DialogFooter>
+            <Button
+              type="button"
+              variant="outline"
+              onClick={() => onClose(false)}
+              disabled={pending}
+            >
+              取消
+            </Button>
+            <Button type="submit" disabled={pending}>
+              {pending && <Loader2 className="animate-spin" />} 确认增加
             </Button>
           </DialogFooter>
         </form>

@@ -239,7 +239,8 @@ export async function updatePlayerProfileAction(
 export async function createStaffAction(
   input: z.infer<typeof createStaffSchema>
 ): Promise<CreateResult> {
-  await requireSession({ role: ["BOSS", "STAFF"] });
+  // 仅 BOSS 可创建店长账号(STAFF 之间互不能管理)
+  await requireSession({ role: "BOSS" });
   const parsed = createStaffSchema.safeParse(input);
   if (!parsed.success) {
     return { ok: false, error: parsed.error.errors[0]?.message ?? "参数错误" };
@@ -270,6 +271,10 @@ export async function toggleUserActiveAction(input: {
   if (!target || target.role === "BOSS") {
     return { ok: false as const, error: "目标账号不存在或无权操作" };
   }
+  // STAFF 之间互不能停用,只有 BOSS 能管理店长账号
+  if (target.role === "STAFF" && me.role !== "BOSS") {
+    return { ok: false as const, error: "只有店主可以管理店长账号" };
+  }
 
   await db
     .update(user)
@@ -280,12 +285,47 @@ export async function toggleUserActiveAction(input: {
   return { ok: true as const };
 }
 
+export async function deleteStaffAction(input: { id: string }) {
+  // 仅 BOSS 可删除店长账号(STAFF 只能停用,见 toggleUserActiveAction)
+  const { user: me } = await requireSession({ role: "BOSS" });
+  if (input.id === me.id) {
+    return { ok: false as const, error: "不能删除自己的账号" };
+  }
+
+  const target = await db
+    .select({ role: user.role })
+    .from(user)
+    .where(eq(user.id, input.id))
+    .get();
+  if (!target) {
+    return { ok: false as const, error: "账号不存在" };
+  }
+  if (target.role !== "STAFF") {
+    return { ok: false as const, error: "只能删除店长账号" };
+  }
+
+  try {
+    // session/account 表外键带 onDelete:cascade,会自动清理。
+    // 业务表(order/playerInvite/customerBalanceTxn)外键无 cascade,
+    // 一旦有关联记录会触发 SQLite FK 约束抛错,转成"只能停用"提示。
+    await db.delete(user).where(eq(user.id, input.id));
+  } catch {
+    return {
+      ok: false as const,
+      error: "该店长已有业务记录(订单/邀请/预存),只能停用,无法删除",
+    };
+  }
+
+  revalidatePath("/staff");
+  return { ok: true as const };
+}
+
 export async function resetUserPasswordAction(input: {
   id: string;
 }): Promise<
   { ok: true; newPassword: string } | { ok: false; error: string }
 > {
-  await requireSession({ role: ["BOSS", "STAFF"] });
+  const { user: me } = await requireSession({ role: ["BOSS", "STAFF"] });
 
   const target = await db
     .select({ role: user.role })
@@ -294,6 +334,10 @@ export async function resetUserPasswordAction(input: {
     .get();
   if (!target || target.role === "BOSS") {
     return { ok: false, error: "目标账号不存在或无权操作" };
+  }
+  // STAFF 不能重置其他 STAFF 的密码(等价于踢出账号,只有 BOSS 能做)
+  if (target.role === "STAFF" && me.role !== "BOSS") {
+    return { ok: false, error: "只有店主可以管理店长账号" };
   }
 
   const newPassword = generateInitialPassword();

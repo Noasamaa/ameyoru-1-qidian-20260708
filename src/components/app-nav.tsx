@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
-import { LogOut, KeyRound, UserCircle } from "lucide-react";
+import { LogOut, KeyRound, Menu, UserCircle } from "lucide-react";
 import { authClient } from "@/lib/auth-client";
 import { cn } from "@/lib/utils";
 import { avatarInitial } from "@/lib/format";
@@ -59,19 +59,58 @@ export function AppNav({ items, user }: AppNavProps) {
     router.refresh();
   }
 
+  const currentItem = items.find((item) => isActive(pathname, item.href));
+
   return (
     <header className="sticky top-0 z-30 border-b bg-background/85 backdrop-blur supports-[backdrop-filter]:bg-background/70">
-      <div className="mx-auto flex h-14 max-w-6xl items-center gap-4 px-4 sm:px-6">
+      <div className="mx-auto flex h-14 max-w-6xl items-center gap-2 px-4 sm:gap-4 sm:px-6">
+        {/* 移动端汉堡菜单 — sm 之下用,完整列出 nav items */}
+        <DropdownMenu>
+          <DropdownMenuTrigger asChild>
+            <Button
+              variant="ghost"
+              size="icon"
+              className="shrink-0 sm:hidden"
+              aria-label="导航菜单"
+            >
+              <Menu />
+            </Button>
+          </DropdownMenuTrigger>
+          <DropdownMenuContent align="start" className="w-44">
+            {items.map((item) => {
+              const active = isActive(pathname, item.href);
+              return (
+                <DropdownMenuItem key={item.href} asChild>
+                  <Link
+                    href={item.href}
+                    className={cn(active && "bg-secondary font-medium")}
+                  >
+                    {item.label}
+                  </Link>
+                </DropdownMenuItem>
+              );
+            })}
+          </DropdownMenuContent>
+        </DropdownMenu>
+
         <Link href="/" className="flex items-center gap-2 shrink-0">
-          <div className="flex size-7 items-center justify-center rounded-lg bg-primary text-primary-foreground text-sm font-bold">
-            起
+          <div className="flex h-7 items-center justify-center rounded-lg bg-primary px-1.5 text-primary-foreground text-xs font-bold">
+            起点
           </div>
           <span className="hidden text-sm font-semibold tracking-tight sm:inline">
             起点电竞
           </span>
         </Link>
 
-        <nav className="flex flex-1 items-center gap-0.5 overflow-x-auto">
+        {/* 移动端只显示当前页面名,避免 tab 横向溢出 */}
+        {currentItem && (
+          <span className="ml-1 text-sm font-medium sm:hidden">
+            {currentItem.label}
+          </span>
+        )}
+
+        {/* sm+ 显示完整 tab 列表 */}
+        <nav className="hidden flex-1 items-center gap-0.5 overflow-x-auto sm:flex">
           {items.map((item) => {
             const active = isActive(pathname, item.href);
             return (
@@ -90,6 +129,9 @@ export function AppNav({ items, user }: AppNavProps) {
             );
           })}
         </nav>
+
+        {/* 撑开右侧用户菜单 */}
+        <div className="flex-1 sm:hidden" />
 
         <DropdownMenu>
           <DropdownMenuTrigger asChild>

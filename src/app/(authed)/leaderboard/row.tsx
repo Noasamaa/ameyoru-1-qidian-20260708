@@ -40,10 +40,10 @@ export function LeaderboardRow({
           )}
         </div>
         <div className="text-xs text-muted-foreground">
-          {row.orderCount} 单 · {formatDuration(row.durationMin)}
+          {formatDuration(row.durationMin)} · {row.orderCount} 单
         </div>
       </div>
-      {isBoss ? (
+      {isBoss && (
         <div className="text-right">
           <div className="font-mono text-sm tabular-nums">
             {formatYuan(row.payableCents)}
@@ -51,16 +51,15 @@ export function LeaderboardRow({
           <div className="font-mono text-[11px] tabular-nums text-success">
             应得{" "}
             {row.playerEarnCents == null
-              ? "*"
+              ? "—"
               : formatYuan(row.playerEarnCents)}
           </div>
         </div>
-      ) : (
+      )}
+      {!isBoss && isMe && row.playerEarnCents != null && (
         <div className="text-right">
           <div className="font-mono text-sm tabular-nums text-success">
-            {row.playerEarnCents == null
-              ? "*"
-              : formatYuan(row.playerEarnCents)}
+            {formatYuan(row.playerEarnCents)}
           </div>
           <div className="text-[11px] text-muted-foreground">应得</div>
         </div>

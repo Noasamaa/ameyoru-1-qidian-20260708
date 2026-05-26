@@ -68,7 +68,12 @@ export function OrderForm({
     setStartAt(local);
     setEndAt(local);
   }, []);
-  const [rate, setRate] = useState("");
+  // 陪玩自报:单价锁定为老板设的 defaultRateCents,不可修改
+  const [rate, setRate] = useState(
+    !isManager && players[0]?.defaultRateCents
+      ? centsToYuanString(players[0].defaultRateCents)
+      : ""
+  );
   const [discount, setDiscount] = useState("");
   const [usePrepay, setUsePrepay] = useState(false);
   const [note, setNote] = useState("");
@@ -305,8 +310,14 @@ export function OrderForm({
                 min="0"
                 value={rate}
                 onChange={(e) => setRate(e.target.value)}
+                readOnly={!isManager}
                 required
               />
+              {!isManager && (
+                <p className="text-xs text-muted-foreground">
+                  单价由店里设定,如需修改请联系管理员
+                </p>
+              )}
             </div>
             {isManager && (
               <div className="space-y-2">

@@ -13,45 +13,71 @@ import { cn } from "@/lib/utils";
 import { leaderboard, playerSummary, recentOrders } from "@/server/stats";
 import {
   avatarInitial,
+  formatDuration,
   formatRelativeDateTime,
   formatYuan,
 } from "@/lib/format";
+import { QuickOrderCard } from "./quick-order-card";
 
 export async function PlayerOverview({
   userId,
   userName,
+  defaultRateCents,
+  activeOrder,
 }: {
   userId: string;
   userName: string;
+  defaultRateCents: number | null;
+  activeOrder: {
+    id: string;
+    startAt: string;
+    hourlyRateCents: number;
+    customerName: string;
+  } | null;
 }) {
-  const [today, week, month, weekRank, recent] = await Promise.all([
+  const [today, week, month, weekRank, monthRank, recent] = await Promise.all([
     playerSummary(userId, "today"),
     playerSummary(userId, "week"),
     playerSummary(userId, "month"),
     leaderboard("week"),
+    leaderboard("month"),
     recentOrders({ playerId: userId, limit: 5 }),
   ]);
 
-  const rankIdx = weekRank.findIndex((r) => r.playerId === userId);
-  const rankText =
-    rankIdx >= 0
-      ? `本周第 ${rankIdx + 1}`
-      : weekRank.length === 0
-        ? "本周还没单"
-        : "未上榜";
+  const weekRankIdx = weekRank.findIndex((r) => r.playerId === userId);
+  const monthRankIdx = monthRank.findIndex((r) => r.playerId === userId);
+  const myWeekDuration = weekRankIdx >= 0 ? weekRank[weekRankIdx].durationMin : 0;
+  const myMonthDuration = monthRankIdx >= 0 ? monthRank[monthRankIdx].durationMin : 0;
+  const formatRank = (
+    idx: number,
+    range: "week" | "month",
+    durationMin: number,
+    orderCount: number
+  ) => {
+    const label = range === "week" ? "本周" : "本月";
+    if (idx >= 0) return `${label}第 ${idx + 1} · ${formatDuration(durationMin)}`;
+    if (orderCount === 0) return `${label}还没单`;
+    return `${label}未上榜`;
+  };
+  const rankDescription = `${formatRank(weekRankIdx, "week", myWeekDuration, week.orderCount)}  ·  ${formatRank(monthRankIdx, "month", myMonthDuration, month.orderCount)}`;
 
   return (
     <>
       <PageHeader
         title={`你好,${userName}`}
-        description={`${rankText} · 本周已完成 ${week.orderCount} 单`}
+        description={rankDescription}
         action={
-          <Button asChild size="lg">
+          <Button asChild size="lg" variant="outline">
             <Link href="/orders/new">
               <Plus /> 报单
             </Link>
           </Button>
         }
+      />
+
+      <QuickOrderCard
+        defaultRateCents={defaultRateCents}
+        activeOrder={activeOrder}
       />
 
       <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
@@ -141,12 +167,38 @@ export async function PlayerOverview({
                         )}
                       </div>
                       <div className="text-xs text-muted-foreground">
-                        {r.orderCount} 单
+                        {formatDuration(r.durationMin)} · {r.orderCount} 单
                       </div>
                     </div>
                   </li>
                 );
               })}
+
+              {/* 自己不在 TOP 5 时,在末尾追加一行高亮显示自己的位置 */}
+              {weekRankIdx >= 5 && (
+                <li className="mt-1 flex items-center gap-3 rounded-lg border-t border-dashed bg-primary/5 px-3 py-2.5">
+                  <RankBadge index={weekRankIdx} />
+                  <Avatar className="size-8">
+                    <AvatarFallback className="bg-primary/10 text-primary text-xs">
+                      {avatarInitial(userName)}
+                    </AvatarFallback>
+                  </Avatar>
+                  <div className="min-w-0 flex-1">
+                    <div className="flex items-center gap-2 text-sm font-medium">
+                      {userName}
+                      <Badge
+                        variant="outline"
+                        className="px-1.5 text-[10px]"
+                      >
+                        我
+                      </Badge>
+                    </div>
+                    <div className="text-xs text-muted-foreground">
+                      {formatDuration(weekRank[weekRankIdx]?.durationMin ?? 0)} · {weekRank[weekRankIdx]?.orderCount ?? week.orderCount} 单
+                    </div>
+                  </div>
+                </li>
+              )}
             </ol>
           )}
         </Section>

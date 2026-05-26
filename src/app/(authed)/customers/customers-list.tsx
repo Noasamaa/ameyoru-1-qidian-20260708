@@ -88,78 +88,84 @@ export function CustomersList({ customers }: { customers: CustomerRow[] }) {
           {customers.map((c, i) => (
             <li
               key={c.id}
-              className="flex items-center gap-3 px-4 py-3 hover:bg-accent/40"
+              className="flex flex-col gap-3 px-4 py-3 hover:bg-accent/40 sm:flex-row sm:items-center"
             >
-              <span className="flex size-7 shrink-0 items-center justify-center rounded-md font-mono text-sm font-medium tabular-nums text-muted-foreground">
-                {i + 1}
-              </span>
-              <Avatar className="size-9">
-                <AvatarFallback className="bg-muted text-foreground text-xs">
-                  {avatarInitial(c.name)}
-                </AvatarFallback>
-              </Avatar>
-              <div className="min-w-0 flex-1">
-                <div className="flex items-center gap-2 text-sm font-medium">
-                  {c.name}
-                  {c.orderCount >= 10 && (
-                    <Badge className="border-transparent bg-gradient-to-br from-rank-gold-from to-rank-gold-to text-white text-[10px]">
-                      VIP
-                    </Badge>
-                  )}
-                  {c.orderCount >= 2 && c.orderCount < 10 && (
-                    <Badge variant="success" className="text-[10px]">
-                      回头客
-                    </Badge>
-                  )}
-                </div>
-                <div className="flex flex-wrap items-center gap-x-2 text-xs text-muted-foreground">
-                  <span className="font-mono">#{c.memberNo}</span>
-                  {c.wechat && (
-                    <span className="inline-flex items-center gap-0.5 font-mono">
-                      <MessageCircle className="size-3" />
-                      {c.wechat}
-                    </span>
-                  )}
-                  {c.note && <span className="truncate">· {c.note}</span>}
-                </div>
-              </div>
-              <div className="text-right">
-                <div className="font-mono text-sm font-medium tabular-nums">
-                  {formatYuan(c.payableCents)}
-                </div>
-                <div className="text-xs text-muted-foreground">
-                  {c.orderCount} 单
-                </div>
-                {c.balanceCents > 0 && (
-                  <div className="font-mono text-xs tabular-nums text-success">
-                    预存余额 {formatYuan(c.balanceCents)}
+              <div className="flex min-w-0 flex-1 items-center gap-3">
+                <span className="flex size-7 shrink-0 items-center justify-center rounded-md font-mono text-sm font-medium tabular-nums text-muted-foreground">
+                  {i + 1}
+                </span>
+                <Avatar className="size-9 shrink-0">
+                  <AvatarFallback className="bg-muted text-foreground text-xs">
+                    {avatarInitial(c.name)}
+                  </AvatarFallback>
+                </Avatar>
+                <div className="min-w-0 flex-1">
+                  <div className="flex items-center gap-2 text-sm font-medium">
+                    <span className="truncate">{c.name}</span>
+                    {c.orderCount >= 10 && (
+                      <Badge className="border-transparent bg-gradient-to-br from-rank-gold-from to-rank-gold-to text-white text-[10px]">
+                        VIP
+                      </Badge>
+                    )}
+                    {c.orderCount >= 2 && c.orderCount < 10 && (
+                      <Badge variant="success" className="text-[10px]">
+                        回头客
+                      </Badge>
+                    )}
                   </div>
-                )}
+                  <div className="flex flex-wrap items-center gap-x-2 text-xs text-muted-foreground">
+                    <span className="font-mono">#{c.memberNo}</span>
+                    {c.wechat && (
+                      <span className="inline-flex items-center gap-0.5 font-mono">
+                        <MessageCircle className="size-3" />
+                        {c.wechat}
+                      </span>
+                    )}
+                    {c.note && <span className="truncate">· {c.note}</span>}
+                  </div>
+                </div>
+                <div className="text-right shrink-0">
+                  <div className="font-mono text-sm font-medium tabular-nums">
+                    {formatYuan(c.payableCents)}
+                  </div>
+                  <div className="text-xs text-muted-foreground">
+                    {c.orderCount} 单
+                  </div>
+                  {c.balanceCents > 0 && (
+                    <div className="font-mono text-xs tabular-nums text-success">
+                      预存余额 {formatYuan(c.balanceCents)}
+                    </div>
+                  )}
+                </div>
               </div>
-              <Button
-                variant={c.balanceCents > 0 ? "secondary" : "outline"}
-                size="sm"
-                onClick={() => setDepositing(c)}
-              >
-                <WalletCards />
-                充值预存
-              </Button>
-              <Button
-                variant="ghost"
-                size="sm"
-                onClick={() => setLedgerCustomer(c)}
-              >
-                <FileText />
-                查看流水
-              </Button>
-              <Button
-                variant="ghost"
-                size="icon"
-                aria-label="编辑客户"
-                onClick={() => setEditing(c)}
-              >
-                <Pencil />
-              </Button>
+              <div className="flex items-center gap-1 sm:gap-2">
+                <Button
+                  variant={c.balanceCents > 0 ? "secondary" : "outline"}
+                  size="sm"
+                  onClick={() => setDepositing(c)}
+                  className="flex-1 sm:flex-none"
+                >
+                  <WalletCards />
+                  充值预存
+                </Button>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={() => setLedgerCustomer(c)}
+                  className="flex-1 sm:flex-none"
+                >
+                  <FileText />
+                  查看流水
+                </Button>
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  aria-label="编辑客户"
+                  onClick={() => setEditing(c)}
+                >
+                  <Pencil />
+                </Button>
+              </div>
             </li>
           ))}
         </ul>

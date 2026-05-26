@@ -13,6 +13,7 @@ import {
   Power,
   PowerOff,
   RotateCw,
+  Trash2,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -36,10 +37,15 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { EmptyState } from "@/components/empty-state";
-import { avatarInitial } from "@/lib/format";
-import { createPlayerInviteAction } from "@/server/actions/player-invites";
+import { cn } from "@/lib/utils";
+import { avatarInitial, formatYuan } from "@/lib/format";
+import {
+  createPlayerInviteAction,
+  deletePlayerInviteAction,
+} from "@/server/actions/player-invites";
 import {
   createStaffAction,
+  deleteStaffAction,
   resetUserPasswordAction,
   toggleUserActiveAction,
 } from "@/server/actions/users";
@@ -53,6 +59,18 @@ interface Staff {
   createdAt: string;
 }
 
+interface Invite {
+  id: string;
+  inviteToken: string;
+  playerGender: "MALE" | "FEMALE" | null;
+  defaultRateCents: number | null;
+  maxUses: number;
+  useCount: number;
+  expiresAt: string;
+  createdAt: string;
+  createdByName: string;
+}
+
 interface Credential {
   title: string;
   description: string;
@@ -60,7 +78,15 @@ interface Credential {
   password: string;
 }
 
-export function StaffClient({ staff }: { staff: Staff[] }) {
+export function StaffClient({
+  isBoss,
+  staff,
+  invites,
+}: {
+  isBoss: boolean;
+  staff: Staff[];
+  invites: Invite[];
+}) {
   const router = useRouter();
   const [createOpen, setCreateOpen] = useState(false);
   const [inviteOpen, setInviteOpen] = useState(false);
@@ -68,7 +94,11 @@ export function StaffClient({ staff }: { staff: Staff[] }) {
   const [credentialDialog, setCredentialDialog] = useState<Credential | null>(
     null
   );
+  const [hideInactive, setHideInactive] = useState(false);
   const [pending, startTransition] = useTransition();
+
+  const hasInactive = staff.some((s) => !s.active);
+  const visibleStaff = hideInactive ? staff.filter((s) => s.active) : staff;
 
   function handleToggle(s: Staff) {
     startTransition(async () => {
@@ -100,38 +130,76 @@ export function StaffClient({ staff }: { staff: Staff[] }) {
     });
   }
 
+  function handleDelete(s: Staff) {
+    if (!confirm(`删除 ${s.displayName}?此操作不可撤销,有业务记录的店长会自动拦截`)) {
+      return;
+    }
+    startTransition(async () => {
+      const res = await deleteStaffAction({ id: s.id });
+      if (!res.ok) {
+        toast.error(res.error);
+        return;
+      }
+      toast.success(`已删除 ${s.displayName}`);
+      router.refresh();
+    });
+  }
+
   return (
     <>
-      <div className="mb-4 flex items-center justify-between">
-        <div className="text-sm text-muted-foreground">
-          共 {staff.length} 位店长/合伙人,
-          {staff.filter((s) => s.active).length} 位活跃
+      <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
+        <div className="flex flex-wrap items-center gap-3 text-sm text-muted-foreground">
+          <span>
+            共 {staff.length} 位店长/合伙人,
+            {staff.filter((s) => s.active).length} 位活跃
+          </span>
+          {hasInactive && (
+            <label className="flex cursor-pointer items-center gap-1.5 select-none">
+              <input
+                type="checkbox"
+                checked={hideInactive}
+                onChange={(e) => setHideInactive(e.target.checked)}
+                className="size-4 rounded border-input accent-primary"
+              />
+              <span>隐藏已停用</span>
+            </label>
+          )}
         </div>
         <div className="flex gap-2">
           <Button variant="outline" onClick={() => setInviteOpen(true)}>
             <Link2 /> 创建陪玩链接
           </Button>
-          <Button onClick={() => setCreateOpen(true)}>
-            <Plus /> 新建店长
-          </Button>
+          {isBoss && (
+            <Button onClick={() => setCreateOpen(true)}>
+              <Plus /> 新建店长
+            </Button>
+          )}
         </div>
       </div>
+
+      <InviteList invites={invites} />
 
       {staff.length === 0 ? (
         <EmptyState
           icon={<Plus />}
           title="还没有店长"
-          description="点击「新建店长」开始"
+          description={isBoss ? "点击「新建店长」开始" : "请联系店主创建店长账号"}
           action={
-            <Button onClick={() => setCreateOpen(true)}>
-              <Plus /> 新建店长
-            </Button>
+            isBoss ? (
+              <Button onClick={() => setCreateOpen(true)}>
+                <Plus /> 新建店长
+              </Button>
+            ) : undefined
           }
         />
+      ) : visibleStaff.length === 0 ? (
+        <Card className="px-4 py-6 text-center text-sm text-muted-foreground">
+          已隐藏所有停用账号
+        </Card>
       ) : (
         <Card className="overflow-hidden p-0">
           <ul className="divide-y">
-            {staff.map((s) => (
+            {visibleStaff.map((s) => (
               <li
                 key={s.id}
                 className="flex items-center gap-3 px-4 py-3 hover:bg-accent/40"
@@ -159,34 +227,44 @@ export function StaffClient({ staff }: { staff: Staff[] }) {
                     @{s.username}
                   </div>
                 </div>
-                <DropdownMenu>
-                  <DropdownMenuTrigger asChild>
-                    <Button variant="ghost" size="icon" aria-label="操作">
-                      <MoreHorizontal />
-                    </Button>
-                  </DropdownMenuTrigger>
-                  <DropdownMenuContent align="end" className="w-44">
-                    <DropdownMenuItem
-                      onClick={() => handleReset(s)}
-                      disabled={pending}
-                    >
-                      <RotateCw /> 重置密码
-                    </DropdownMenuItem>
-                    <DropdownMenuSeparator />
-                    {s.active ? (
+                {isBoss && (
+                  <DropdownMenu>
+                    <DropdownMenuTrigger asChild>
+                      <Button variant="ghost" size="icon" aria-label="操作">
+                        <MoreHorizontal />
+                      </Button>
+                    </DropdownMenuTrigger>
+                    <DropdownMenuContent align="end" className="w-44">
+                      <DropdownMenuItem
+                        onClick={() => handleReset(s)}
+                        disabled={pending}
+                      >
+                        <RotateCw /> 重置密码
+                      </DropdownMenuItem>
+                      <DropdownMenuSeparator />
+                      {s.active ? (
+                        <DropdownMenuItem
+                          variant="destructive"
+                          onClick={() => handleToggle(s)}
+                        >
+                          <PowerOff /> 停用账号
+                        </DropdownMenuItem>
+                      ) : (
+                        <DropdownMenuItem onClick={() => handleToggle(s)}>
+                          <Power /> 激活账号
+                        </DropdownMenuItem>
+                      )}
+                      <DropdownMenuSeparator />
                       <DropdownMenuItem
                         variant="destructive"
-                        onClick={() => handleToggle(s)}
+                        onClick={() => handleDelete(s)}
+                        disabled={pending}
                       >
-                        <PowerOff /> 停用账号
+                        <Trash2 /> 删除账号
                       </DropdownMenuItem>
-                    ) : (
-                      <DropdownMenuItem onClick={() => handleToggle(s)}>
-                        <Power /> 激活账号
-                      </DropdownMenuItem>
-                    )}
-                  </DropdownMenuContent>
-                </DropdownMenu>
+                    </DropdownMenuContent>
+                  </DropdownMenu>
+                )}
               </li>
             ))}
           </ul>
@@ -213,6 +291,132 @@ export function StaffClient({ staff }: { staff: Staff[] }) {
   );
 }
 
+function InviteList({ invites }: { invites: Invite[] }) {
+  if (invites.length === 0) return null;
+  return (
+    <Card className="mb-4 overflow-hidden p-0">
+      <div className="flex items-center justify-between border-b bg-muted/30 px-4 py-2">
+        <span className="text-xs font-medium text-muted-foreground">
+          陪玩邀请链接 · {invites.length}
+        </span>
+        <span className="text-xs text-muted-foreground">
+          复制链接发给陪玩,他们打开后自助注册
+        </span>
+      </div>
+      <ul className="divide-y">
+        {invites.map((inv) => (
+          <InviteRow key={inv.id} invite={inv} />
+        ))}
+      </ul>
+    </Card>
+  );
+}
+
+function InviteRow({ invite }: { invite: Invite }) {
+  const router = useRouter();
+  const [pending, startTransition] = useTransition();
+  const [copied, setCopied] = useState(false);
+
+  const expiresAt = new Date(invite.expiresAt);
+  const expired = expiresAt.getTime() < Date.now();
+  const exhausted = invite.maxUses > 0 && invite.useCount >= invite.maxUses;
+  const inactive = expired || exhausted;
+
+  const genderLabel =
+    invite.playerGender === "MALE"
+      ? "男陪"
+      : invite.playerGender === "FEMALE"
+        ? "女陪"
+        : "不限";
+  const rateLabel = invite.defaultRateCents
+    ? `${formatYuan(invite.defaultRateCents)}/h`
+    : "未设单价";
+
+  // 距离过期的剩余天数,正数显示"X 天后过期",负数显示"已过期"
+  const daysLeft = Math.ceil(
+    (expiresAt.getTime() - Date.now()) / (24 * 60 * 60 * 1000)
+  );
+  const expiresLabel = expired
+    ? "已过期"
+    : daysLeft <= 1
+      ? "今天过期"
+      : `${daysLeft} 天后过期`;
+
+  async function handleCopy() {
+    const link = `${window.location.origin}/player-invite/${invite.inviteToken}`;
+    try {
+      await navigator.clipboard.writeText(link);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 1500);
+    } catch {
+      toast.error("复制失败,请手动选中复制");
+    }
+  }
+
+  function handleDelete() {
+    if (!confirm(`删除这条邀请链接?已注册的陪玩不受影响,但链接立刻失效`)) {
+      return;
+    }
+    startTransition(async () => {
+      const res = await deletePlayerInviteAction({ id: invite.id });
+      if (!res.ok) {
+        toast.error("删除失败");
+        return;
+      }
+      toast.success("已删除");
+      router.refresh();
+    });
+  }
+
+  return (
+    <li
+      className={cn(
+        "flex items-center gap-3 px-4 py-3",
+        inactive && "opacity-60"
+      )}
+    >
+      <Badge variant={invite.playerGender === "MALE" ? "secondary" : "default"}>
+        {genderLabel}
+      </Badge>
+      <div className="min-w-0 flex-1">
+        <div className="flex items-center gap-2 text-sm font-medium">
+          <span className="font-mono">{rateLabel}</span>
+          <span className="text-muted-foreground">·</span>
+          <span>已注册 {invite.useCount} 人</span>
+          {exhausted && (
+            <Badge variant="outline" className="text-[10px]">
+              已用完
+            </Badge>
+          )}
+        </div>
+        <div className="text-xs text-muted-foreground">
+          {expiresLabel} · {invite.createdByName} 创建
+        </div>
+      </div>
+      <Button
+        variant="ghost"
+        size="sm"
+        onClick={handleCopy}
+        disabled={inactive}
+        aria-label="复制链接"
+      >
+        {copied ? <Check /> : <Copy />}
+        {copied ? "已复制" : "复制"}
+      </Button>
+      <Button
+        variant="ghost"
+        size="icon"
+        onClick={handleDelete}
+        disabled={pending}
+        aria-label="删除邀请链接"
+        className="text-destructive hover:text-destructive"
+      >
+        {pending ? <Loader2 className="animate-spin" /> : <Trash2 />}
+      </Button>
+    </li>
+  );
+}
+
 function CreateInviteDialog({
   open,
   onOpenChange,
@@ -222,6 +426,7 @@ function CreateInviteDialog({
   onOpenChange: (v: boolean) => void;
   onCreated: (link: string) => void;
 }) {
+  const router = useRouter();
   const [playerGender, setPlayerGender] = useState("FEMALE");
   const [defaultRate, setDefaultRate] = useState("40");
   const [pending, startTransition] = useTransition();
@@ -241,6 +446,7 @@ function CreateInviteDialog({
       const origin = window.location.origin;
       onOpenChange(false);
       onCreated(`${origin}/player-invite/${res.token}`);
+      router.refresh();
     });
   }
 

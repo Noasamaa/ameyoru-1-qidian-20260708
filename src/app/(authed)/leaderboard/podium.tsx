@@ -107,25 +107,27 @@ export function LeaderboardPodium({
               </div>
 
               <div className="mt-4 grid grid-cols-2 gap-2">
+                <Stat label="时长" value={formatDuration(r.durationMin)} />
                 <Stat label="单数" value={r.orderCount.toString()} />
-                {isBoss ? (
+              </div>
+              {isBoss && (
+                <div className="mt-2">
                   <Stat
                     label="流水"
                     value={formatYuan(r.payableCents)}
                     mono
                   />
-                ) : (
+                </div>
+              )}
+              {!isBoss && isMe && r.playerEarnCents != null && (
+                <div className="mt-2">
                   <Stat
-                    label={isMe ? "应得" : "—"}
-                    value={
-                      r.playerEarnCents == null
-                        ? "*"
-                        : formatYuan(r.playerEarnCents)
-                    }
-                    mono={isMe}
+                    label="应得"
+                    value={formatYuan(r.playerEarnCents)}
+                    mono
                   />
-                )}
-              </div>
+                </div>
+              )}
             </div>
           </div>
         );
