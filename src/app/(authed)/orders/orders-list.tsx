@@ -272,6 +272,13 @@ export function OrdersList({
                           </div>
                         )}
                       </div>
+                      {isCanceled && (o.cancelFault || o.cancelNote) && (
+                        <div className="mt-1 truncate text-xs text-muted-foreground">
+                          {o.cancelFault && faultLabel[o.cancelFault]}
+                          {o.cancelFault && o.cancelNote && " · "}
+                          {o.cancelNote}
+                        </div>
+                      )}
                     </div>
                     <OrderStatusGroup
                       orderStatus={o.orderStatus}
@@ -699,15 +706,26 @@ function ActionBar({
     return (
       <div className="border-t px-6 py-4 space-y-2">
         {order.orderStatus === "COMPLETED" && (
-          <Button
-            variant="ghost"
-            size="sm"
-            className="w-full text-muted-foreground"
-            onClick={onAdjustDuration}
-            disabled={pending}
-          >
-            增加时长(如老板送单)
-          </Button>
+          <>
+            <Button
+              variant="ghost"
+              size="sm"
+              className="w-full text-muted-foreground"
+              onClick={onAdjustDuration}
+              disabled={pending}
+            >
+              增加时长(如老板送单)
+            </Button>
+            <Button
+              variant="ghost"
+              size="sm"
+              className="w-full text-destructive hover:text-destructive"
+              onClick={onOpenCancel}
+              disabled={pending}
+            >
+              <XCircle /> 取消订单
+            </Button>
+          </>
         )}
         <p className="text-xs text-muted-foreground">
           {hasQr ? "扫码打款后,标记为已结:" : "线下打款后,标记为已结(陪玩还未上传收款码):"}

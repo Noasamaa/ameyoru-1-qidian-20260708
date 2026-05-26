@@ -552,6 +552,7 @@ export async function cancelOrderAction(input: CancelOrderInput) {
   const [target] = await db
     .select({
       orderStatus: order.orderStatus,
+      settleStatus: order.settleStatus,
       playerEarnCents: order.playerEarnCents,
       customerId: order.customerId,
       prepayUsedCents: order.prepayUsedCents,
@@ -562,8 +563,11 @@ export async function cancelOrderAction(input: CancelOrderInput) {
     .where(eq(order.id, id))
     .limit(1);
   if (!target) return { ok: false as const, error: "订单不存在" };
-  if (target.orderStatus !== "IN_PROGRESS") {
-    return { ok: false as const, error: "只有进行中订单可取消" };
+  if (target.orderStatus === "CANCELED") {
+    return { ok: false as const, error: "订单已取消" };
+  }
+  if (target.settleStatus === "SETTLED") {
+    return { ok: false as const, error: "已结算的订单不能取消,请先撤销结算" };
   }
 
   const compensationCents = compensationYuan
