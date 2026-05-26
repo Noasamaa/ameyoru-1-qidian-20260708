@@ -22,7 +22,7 @@ const roleLabel: Record<Role, string> = {
 export default async function ProfilePage() {
   const { user: me } = await requireSession();
 
-  const profile = await db
+  const [profile] = await db
     .select({
       id: user.id,
       name: user.name,
@@ -36,7 +36,7 @@ export default async function ProfilePage() {
     })
     .from(user)
     .where(eq(user.id, me.id))
-    .get();
+    .limit(1);
 
   if (!profile) return null;
 
@@ -58,7 +58,7 @@ export default async function ProfilePage() {
             <div className="min-w-0 flex-1">
               <div className="flex items-center gap-2">
                 <span className="text-lg font-semibold">{profile.name}</span>
-                <Badge variant="secondary">{roleLabel[profile.role]}</Badge>
+                <Badge variant="secondary">{roleLabel[profile.role as Role]}</Badge>
               </div>
               <div className="mt-0.5 text-sm text-muted-foreground">
                 @{profile.username ?? "—"}
@@ -69,7 +69,7 @@ export default async function ProfilePage() {
           <ul className="divide-y">
             <InfoRow label="登录账号" value={profile.username ?? "—"} mono />
             <InfoRow label="显示名" value={profile.name} />
-            <InfoRow label="职位" value={roleLabel[profile.role]} />
+            <InfoRow label="职位" value={roleLabel[profile.role as Role]} />
             {isPlayer && (
               <InfoRow
                 label="默认单价"

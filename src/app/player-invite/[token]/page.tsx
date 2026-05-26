@@ -9,7 +9,7 @@ export default async function PlayerInvitePage({
   params: Promise<{ token: string }>;
 }) {
   const { token } = await params;
-  const invite = await db
+  const [invite] = await db
     .select({
       token: playerInvite.inviteToken,
       playerGender: playerInvite.playerGender,
@@ -21,7 +21,7 @@ export default async function PlayerInvitePage({
     })
     .from(playerInvite)
     .where(eq(playerInvite.inviteToken, token))
-    .get();
+    .limit(1);
 
   const invalid =
     !invite || (invite.maxUses > 0 && invite.useCount >= invite.maxUses) || invite.expiresAt.getTime() < Date.now();

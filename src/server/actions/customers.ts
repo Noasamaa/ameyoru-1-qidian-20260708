@@ -76,28 +76,27 @@ export async function addCustomerDepositAction(
     return { ok: false as const, error: "充值金额必须大于 0" };
   }
 
-  const existing = await db
+  const [existing] = await db
     .select({ id: customer.id })
     .from(customer)
     .where(eq(customer.id, customerId))
-    .get();
+    .limit(1);
   if (!existing) return { ok: false as const, error: "客户不存在" };
 
-  db.transaction((tx) => {
-    tx
+  await db.transaction(async (tx) => {
+    await tx
       .update(customer)
       .set({ balanceCents: sql`${customer.balanceCents} + ${amountCents}` })
-      .where(eq(customer.id, customerId))
-      .run();
+      .where(eq(customer.id, customerId));
 
-    tx.insert(customerBalanceTxn).values({
+    await tx.insert(customerBalanceTxn).values({
       id: nanoid(),
       customerId,
       type: "DEPOSIT",
       amountCents,
       note,
       createdById: me.id,
-    }).run();
+    });
   });
 
   revalidatePath("/customers");

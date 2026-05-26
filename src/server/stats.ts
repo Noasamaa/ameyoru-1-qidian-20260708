@@ -14,7 +14,7 @@ import { rangeOf, type RangeKey } from "@/lib/date-range";
 
 async function pendingSum(playerId?: string) {
   const cond = playerId ? [eq(order.playerId, playerId)] : [];
-  const completed = await db
+  const [completed] = await db
     .select({
       count: count(),
       s: sum(order.playerEarnCents).mapWith(Number),
@@ -26,10 +26,9 @@ async function pendingSum(playerId?: string) {
         eq(order.settleStatus, "UNSETTLED"),
         ...cond
       )
-    )
-    .get();
+    );
 
-  const canceled = await db
+  const [canceled] = await db
     .select({
       count: count(),
       s: sum(order.playerCompensationCents).mapWith(Number),
@@ -41,8 +40,7 @@ async function pendingSum(playerId?: string) {
         eq(order.settleStatus, "UNSETTLED"),
         ...cond
       )
-    )
-    .get();
+    );
 
   return {
     count: (completed?.count ?? 0) + (canceled?.count ?? 0),
@@ -53,7 +51,7 @@ async function pendingSum(playerId?: string) {
 export async function playerSummary(playerId: string, range: RangeKey) {
   const { from, to } = rangeOf(range);
 
-  const completed = await db
+  const [completed] = await db
     .select({
       orderCount: count(),
       durationMin: sum(order.durationMin).mapWith(Number),
@@ -69,10 +67,9 @@ export async function playerSummary(playerId: string, range: RangeKey) {
         gte(order.startAt, from),
         lte(order.startAt, to)
       )
-    )
-    .get();
+    );
 
-  const canceledCompensation = await db
+  const [canceledCompensation] = await db
     .select({ s: sum(order.playerCompensationCents).mapWith(Number) })
     .from(order)
     .where(
@@ -82,16 +79,14 @@ export async function playerSummary(playerId: string, range: RangeKey) {
         gte(order.startAt, from),
         lte(order.startAt, to)
       )
-    )
-    .get();
+    );
 
-  const inProgress = await db
+  const [inProgress] = await db
     .select({ count: count() })
     .from(order)
     .where(
       and(eq(order.playerId, playerId), eq(order.orderStatus, "IN_PROGRESS"))
-    )
-    .get();
+    );
 
   const pending = await pendingSum(playerId);
 
@@ -112,7 +107,7 @@ export async function playerSummary(playerId: string, range: RangeKey) {
 export async function shopSummary(range: RangeKey) {
   const { from, to } = rangeOf(range);
 
-  const completed = await db
+  const [completed] = await db
     .select({
       orderCount: count(),
       originalCents: sum(order.originalCents).mapWith(Number),
@@ -128,10 +123,9 @@ export async function shopSummary(range: RangeKey) {
         gte(order.startAt, from),
         lte(order.startAt, to)
       )
-    )
-    .get();
+    );
 
-  const canceledCompensation = await db
+  const [canceledCompensation] = await db
     .select({ s: sum(order.playerCompensationCents).mapWith(Number) })
     .from(order)
     .where(
@@ -140,14 +134,12 @@ export async function shopSummary(range: RangeKey) {
         gte(order.startAt, from),
         lte(order.startAt, to)
       )
-    )
-    .get();
+    );
 
-  const inProgress = await db
+  const [inProgress] = await db
     .select({ count: count() })
     .from(order)
-    .where(eq(order.orderStatus, "IN_PROGRESS"))
-    .get();
+    .where(eq(order.orderStatus, "IN_PROGRESS"));
 
   const pending = await pendingSum();
 

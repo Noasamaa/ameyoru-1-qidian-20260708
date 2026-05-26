@@ -1,26 +1,30 @@
-import Database from "better-sqlite3";
-import { drizzle } from "drizzle-orm/better-sqlite3";
-import { mkdirSync } from "node:fs";
-import { dirname } from "node:path";
+import { drizzle } from "drizzle-orm/mysql2";
+import mysql from "mysql2/promise";
 import * as schema from "./schema";
 
-const dbUrl = process.env.DATABASE_URL ?? "file:./data/mo.db";
-const filePath = dbUrl.replace(/^file:/, "");
-
-try {
-  mkdirSync(dirname(filePath), { recursive: true });
-} catch {
-  // 目录已存在或没权限,后续 open 会报更明确的错
+const url = process.env.DATABASE_URL;
+if (!url) {
+  throw new Error(
+    "DATABASE_URL is not set. Example: mysql://user:pass@127.0.0.1:3306/mo?charset=utf8mb4"
+  );
 }
 
 const globalForDb = globalThis as unknown as {
-  sqlite: Database.Database | undefined;
+  mysqlPool: mysql.Pool | undefined;
 };
 
-const sqlite = globalForDb.sqlite ?? new Database(filePath);
-if (process.env.NODE_ENV !== "production") globalForDb.sqlite = sqlite;
+const pool =
+  globalForDb.mysqlPool ??
+  mysql.createPool({
+    uri: url,
+    connectionLimit: 10,
+    waitForConnections: true,
+    // 业务里全部用 JS Date,这里关闭 driver 端 Date<->string 转换,
+    // 让 mysql2 始终返回 Date 对象,Drizzle 才能正确路由 datetime mode: "date"
+    dateStrings: false,
+    timezone: "+08:00",
+  });
 
-sqlite.pragma("journal_mode = WAL");
-sqlite.pragma("foreign_keys = ON");
+if (process.env.NODE_ENV !== "production") globalForDb.mysqlPool = pool;
 
-export const db = drizzle(sqlite, { schema });
+export const db = drizzle(pool, { schema, mode: "default" });

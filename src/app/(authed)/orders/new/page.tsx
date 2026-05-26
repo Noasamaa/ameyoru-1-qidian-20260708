@@ -18,7 +18,7 @@ export default async function NewOrderPage() {
   }[] = [];
 
   if (me.role === "PLAYER") {
-    const row = await db
+    const [row] = await db
       .select({
         id: user.id,
         displayName: user.name,
@@ -27,7 +27,7 @@ export default async function NewOrderPage() {
       })
       .from(user)
       .where(eq(user.id, me.id))
-      .get();
+      .limit(1);
     players = row ? [row] : [];
   } else {
     const rows = await db

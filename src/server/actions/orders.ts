@@ -63,7 +63,7 @@ async function findOrCreateCustomer(opts: {
   wechat?: string | null;
 }) {
   if (opts.id) {
-    const picked = await db
+    const [picked] = await db
       .select({
         id: customer.id,
         memberNo: customer.memberNo,
@@ -72,18 +72,18 @@ async function findOrCreateCustomer(opts: {
       })
       .from(customer)
       .where(eq(customer.id, opts.id))
-      .get();
+      .limit(1);
     if (!picked) throw new Error("客户不存在");
     return { ...picked, isNew: false };
   }
 
   for (let i = 0; i < 5; i++) {
     const memberNo = generateMemberNo();
-    const dup = await db
+    const [dup] = await db
       .select({ id: customer.id })
       .from(customer)
       .where(eq(customer.memberNo, memberNo))
-      .get();
+      .limit(1);
     if (dup) continue;
     const id = nanoid();
     await db
@@ -116,13 +116,13 @@ export async function createOrderAction(input: CreateOrderInput) {
     return { ok: false as const, error: "请选择陪玩" };
   }
 
-  const selectedPlayer = await db
+  const [selectedPlayer] = await db
     .select({ id: user.id })
     .from(user)
     .where(
       and(eq(user.id, playerId), eq(user.role, "PLAYER"), eq(user.active, true))
     )
-    .get();
+    .limit(1);
   if (!selectedPlayer) {
     return { ok: false as const, error: "陪玩不存在或已停用" };
   }
@@ -150,11 +150,11 @@ export async function createOrderAction(input: CreateOrderInput) {
   // 陪玩自报:单价强制使用老板设的 defaultRateCents,忽略前端传值(防篡改)
   let hourlyRateCents: number;
   if (me.role === "PLAYER") {
-    const p = await db
+    const [p] = await db
       .select({ defaultRateCents: user.defaultRateCents })
       .from(user)
       .where(eq(user.id, me.id))
-      .get();
+      .limit(1);
     hourlyRateCents = p?.defaultRateCents ?? 0;
   } else {
     hourlyRateCents = yuanStringToCents(data.hourlyRateYuan);
@@ -192,17 +192,17 @@ export async function createOrderAction(input: CreateOrderInput) {
   const id = nanoid();
   const canUsePrepay = me.role !== "PLAYER" && !!data.usePrepay;
   let prepayUsedCents = 0;
-  db.transaction((tx) => {
-    const currentCustomer = tx
+  await db.transaction(async (tx) => {
+    const [currentCustomer] = await tx
       .select({ balanceCents: customer.balanceCents })
       .from(customer)
       .where(eq(customer.id, customerRec.id))
-      .get();
+      .limit(1);
     prepayUsedCents = canUsePrepay
       ? Math.min(currentCustomer?.balanceCents ?? 0, computed.payableCents)
       : 0;
 
-    tx.insert(order).values({
+    await tx.insert(order).values({
       id,
       dispatcherId: me.id,
       playerId,
@@ -219,16 +219,16 @@ export async function createOrderAction(input: CreateOrderInput) {
       commissionCents: computed.commissionCents,
       playerEarnCents: computed.playerEarnCents,
       note: data.note ?? null,
-    }).run();
+    });
 
     if (prepayUsedCents > 0) {
-      tx
+      await tx
         .update(customer)
         .set({
           balanceCents: sql`${customer.balanceCents} - ${prepayUsedCents}`,
         })
-        .where(eq(customer.id, customerRec.id)).run();
-      tx.insert(customerBalanceTxn).values({
+        .where(eq(customer.id, customerRec.id));
+      await tx.insert(customerBalanceTxn).values({
         id: nanoid(),
         customerId: customerRec.id,
         orderId: id,
@@ -236,7 +236,7 @@ export async function createOrderAction(input: CreateOrderInput) {
         amountCents: -prepayUsedCents,
         note: "订单预存抵扣",
         createdById: me.id,
-      }).run();
+      });
     }
   });
 
@@ -272,11 +272,11 @@ export async function startQuickOrderAction(input: { customerName: string }) {
     return { ok: false as const, error: "请填写客户名" };
   }
 
-  const player = await db
+  const [player] = await db
     .select({ defaultRateCents: user.defaultRateCents })
     .from(user)
     .where(eq(user.id, me.id))
-    .get();
+    .limit(1);
   const hourlyRateCents = player?.defaultRateCents ?? 0;
   if (hourlyRateCents <= 0) {
     return {
@@ -286,11 +286,11 @@ export async function startQuickOrderAction(input: { customerName: string }) {
   }
 
   // 同时只允许一个进行中的订单,避免开始按钮反复点出脏数据
-  const existing = await db
+  const [existing] = await db
     .select({ id: order.id })
     .from(order)
     .where(and(eq(order.playerId, me.id), eq(order.orderStatus, "IN_PROGRESS")))
-    .get();
+    .limit(1);
   if (existing) {
     return {
       ok: false as const,
@@ -348,7 +348,7 @@ export async function startQuickOrderAction(input: { customerName: string }) {
 export async function endQuickOrderAction(input: { id: string }) {
   const { user: me } = await requireSession({ role: "PLAYER" });
 
-  const target = await db
+  const [target] = await db
     .select({
       id: order.id,
       playerId: order.playerId,
@@ -358,7 +358,7 @@ export async function endQuickOrderAction(input: { id: string }) {
     })
     .from(order)
     .where(eq(order.id, input.id))
-    .get();
+    .limit(1);
   if (!target) return { ok: false as const, error: "订单不存在" };
   if (target.playerId !== me.id) {
     return { ok: false as const, error: "无权操作" };
@@ -408,7 +408,7 @@ export async function endQuickOrderAction(input: { id: string }) {
 
 export async function completeOrderAction(input: { id: string }) {
   const { user: me } = await requireSession();
-  const target = await db
+  const [target] = await db
     .select({
       playerId: order.playerId,
       orderStatus: order.orderStatus,
@@ -417,7 +417,7 @@ export async function completeOrderAction(input: { id: string }) {
     })
     .from(order)
     .where(eq(order.id, input.id))
-    .get();
+    .limit(1);
   if (!target) return { ok: false as const, error: "订单不存在" };
   if (target.orderStatus !== "IN_PROGRESS") {
     return { ok: false as const, error: "订单已不是进行中状态" };
@@ -466,7 +466,7 @@ export async function adjustOrderDurationAction(
     };
   }
 
-  const target = await db
+  const [target] = await db
     .select({
       id: order.id,
       orderStatus: order.orderStatus,
@@ -480,7 +480,7 @@ export async function adjustOrderDurationAction(
     })
     .from(order)
     .where(eq(order.id, parsed.data.id))
-    .get();
+    .limit(1);
   if (!target) return { ok: false as const, error: "订单不存在" };
   if (target.orderStatus !== "COMPLETED") {
     return { ok: false as const, error: "只能对已完成的订单增加时长" };
@@ -549,7 +549,7 @@ export async function cancelOrderAction(input: CancelOrderInput) {
   }
   const { id, fault, note, compensationYuan } = parsed.data;
 
-  const target = await db
+  const [target] = await db
     .select({
       orderStatus: order.orderStatus,
       playerEarnCents: order.playerEarnCents,
@@ -560,7 +560,7 @@ export async function cancelOrderAction(input: CancelOrderInput) {
     .from(order)
     .innerJoin(customer, eq(customer.id, order.customerId))
     .where(eq(order.id, id))
-    .get();
+    .limit(1);
   if (!target) return { ok: false as const, error: "订单不存在" };
   if (target.orderStatus !== "IN_PROGRESS") {
     return { ok: false as const, error: "只有进行中订单可取消" };
@@ -577,8 +577,8 @@ export async function cancelOrderAction(input: CancelOrderInput) {
   const now = new Date();
   const noCompensation = compensationCents === 0;
 
-  db.transaction((tx) => {
-    tx
+  await db.transaction(async (tx) => {
+    await tx
       .update(order)
       .set({
         orderStatus: "CANCELED",
@@ -589,16 +589,16 @@ export async function cancelOrderAction(input: CancelOrderInput) {
         settleStatus: noCompensation ? "SETTLED" : "UNSETTLED",
         settledAt: noCompensation ? now : null,
       })
-      .where(eq(order.id, id)).run();
+      .where(eq(order.id, id));
 
     if (target.prepayUsedCents > 0) {
-      tx
+      await tx
         .update(customer)
         .set({
           balanceCents: sql`${customer.balanceCents} + ${target.prepayUsedCents}`,
         })
-        .where(eq(customer.id, target.customerId)).run();
-      tx.insert(customerBalanceTxn).values({
+        .where(eq(customer.id, target.customerId));
+      await tx.insert(customerBalanceTxn).values({
         id: nanoid(),
         customerId: target.customerId,
         orderId: id,
@@ -606,7 +606,7 @@ export async function cancelOrderAction(input: CancelOrderInput) {
         amountCents: target.prepayUsedCents,
         note: "订单取消退回预存",
         createdById: me.id,
-      }).run();
+      });
     }
   });
   invalidatePages(id);
@@ -626,7 +626,7 @@ export async function settleOrderAction(input: {
   paidMethod?: "WECHAT" | "ALIPAY";
 }) {
   const { user: me } = await requireSession({ role: ["BOSS", "STAFF"] });
-  const target = await db
+  const [target] = await db
     .select({
       orderStatus: order.orderStatus,
       settleStatus: order.settleStatus,
@@ -635,7 +635,7 @@ export async function settleOrderAction(input: {
     })
     .from(order)
     .where(eq(order.id, input.id))
-    .get();
+    .limit(1);
   if (!target) return { ok: false as const, error: "订单不存在" };
   // 已完成 或 取消+有补偿 都可以结算
   const canSettle =

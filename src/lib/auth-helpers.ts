@@ -35,7 +35,7 @@ function normalizeUser(raw: unknown): AuthedUser {
 }
 
 async function getFreshUser(id: string) {
-  return db
+  const [row] = await db
     .select({
       id: userTable.id,
       name: userTable.name,
@@ -46,7 +46,8 @@ async function getFreshUser(id: string) {
     })
     .from(userTable)
     .where(eq(userTable.id, id))
-    .get();
+    .limit(1);
+  return row;
 }
 
 /**

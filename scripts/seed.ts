@@ -20,8 +20,7 @@ async function main() {
   const existing = await db
     .select()
     .from(user)
-    .where(eq(user.username, BOSS_USERNAME))
-    .all();
+    .where(eq(user.username, BOSS_USERNAME));
 
   if (existing.length > 0) {
     console.log(`[seed] 老板账号已存在(${BOSS_USERNAME}),跳过`);

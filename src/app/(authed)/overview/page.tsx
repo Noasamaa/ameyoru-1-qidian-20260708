@@ -12,12 +12,12 @@ import { PlayerOverview } from "./player-overview";
 export default async function OverviewPage() {
   const { user } = await requireSession();
   if (user.role === "PLAYER") {
-    const [profile, activeOrder] = await Promise.all([
+    const [[profile], [activeOrder]] = await Promise.all([
       db
         .select({ defaultRateCents: userTable.defaultRateCents })
         .from(userTable)
         .where(eq(userTable.id, user.id))
-        .get(),
+        .limit(1),
       db
         .select({
           id: orderTable.id,
@@ -37,8 +37,7 @@ export default async function OverviewPage() {
           )
         )
         .orderBy(desc(orderTable.startAt))
-        .limit(1)
-        .get(),
+        .limit(1),
     ]);
     return (
       <PlayerOverview

@@ -1,115 +1,128 @@
-import { sqliteTable, text, integer, index } from "drizzle-orm/sqlite-core";
+import {
+  mysqlTable,
+  varchar,
+  text,
+  int,
+  boolean,
+  datetime,
+  mysqlEnum,
+  index,
+} from "drizzle-orm/mysql-core";
 import { sql } from "drizzle-orm";
+
+/**
+ * 字符串主键统一长度。原 SQLite 用 string id(better-auth 默认 cuid 风格,通常 < 40 字符),
+ * 留 64 字符余量。所有外键引用列也需要保持同样长度,MySQL 才能创建外键索引。
+ */
+const ID_LEN = 64;
+
+/**
+ * 时间列统一精度。datetime(3) 提供毫秒精度,范围 1000-9999 年,
+ * 无 MySQL `timestamp` 列的 2038 问题与隐式时区转换。
+ * mode: "date" 让 Drizzle 自动把存取层转成 JS Date。
+ */
+const ts = (name: string) =>
+  datetime(name, { mode: "date", fsp: 3 });
 
 /* ----------------------------- Better Auth 标准表 ----------------------------- */
 
-export const user = sqliteTable("user", {
-  id: text("id").primaryKey(),
-  name: text("name").notNull(),
+export const user = mysqlTable("user", {
+  id: varchar("id", { length: ID_LEN }).primaryKey(),
+  name: varchar("name", { length: 191 }).notNull(),
   // Better Auth 要求 email 字段且 unique。我们用 username 登录,
   // 这里存放伪 email(`<username>@mo.local`)。
-  email: text("email").notNull().unique(),
-  emailVerified: integer("email_verified", { mode: "boolean" })
-    .notNull()
-    .default(true),
+  email: varchar("email", { length: 191 }).notNull().unique(),
+  emailVerified: boolean("email_verified").notNull().default(true),
   image: text("image"),
-  createdAt: integer("created_at", { mode: "timestamp" })
+  createdAt: ts("created_at")
     .notNull()
-    .default(sql`(unixepoch())`),
-  updatedAt: integer("updated_at", { mode: "timestamp" })
+    .default(sql`CURRENT_TIMESTAMP(3)`),
+  updatedAt: ts("updated_at")
     .notNull()
-    .default(sql`(unixepoch())`),
+    .default(sql`CURRENT_TIMESTAMP(3)`),
 
   // username plugin 字段
-  username: text("username").unique(),
-  displayUsername: text("display_username"),
+  username: varchar("username", { length: 64 }).unique(),
+  displayUsername: varchar("display_username", { length: 64 }),
 
   // 业务字段
   // BOSS = 店主(全权限);STAFF = 客服/店长(派单/看数据,不管员工);PLAYER = 陪玩
-  role: text("role", { enum: ["BOSS", "STAFF", "PLAYER"] })
+  role: mysqlEnum("role", ["BOSS", "STAFF", "PLAYER"])
     .notNull()
     .default("PLAYER"),
-  active: integer("active", { mode: "boolean" }).notNull().default(true),
-  playerGender: text("player_gender", { enum: ["MALE", "FEMALE"] }),
-  defaultRateCents: integer("default_rate_cents"),
-  mustChangePwd: integer("must_change_pwd", { mode: "boolean" })
-    .notNull()
-    .default(true),
-  wechatQrPath: text("wechat_qr_path"),
-  alipayQrPath: text("alipay_qr_path"),
-  qrSecurityCodeHash: text("qr_security_code_hash"),
+  active: boolean("active").notNull().default(true),
+  playerGender: mysqlEnum("player_gender", ["MALE", "FEMALE"]),
+  defaultRateCents: int("default_rate_cents"),
+  mustChangePwd: boolean("must_change_pwd").notNull().default(true),
+  wechatQrPath: varchar("wechat_qr_path", { length: 500 }),
+  alipayQrPath: varchar("alipay_qr_path", { length: 500 }),
+  qrSecurityCodeHash: varchar("qr_security_code_hash", { length: 255 }),
 });
 
-export const session = sqliteTable("session", {
-  id: text("id").primaryKey(),
-  expiresAt: integer("expires_at", { mode: "timestamp" }).notNull(),
-  token: text("token").notNull().unique(),
-  createdAt: integer("created_at", { mode: "timestamp" })
+export const session = mysqlTable("session", {
+  id: varchar("id", { length: ID_LEN }).primaryKey(),
+  expiresAt: ts("expires_at").notNull(),
+  token: varchar("token", { length: 255 }).notNull().unique(),
+  createdAt: ts("created_at")
     .notNull()
-    .default(sql`(unixepoch())`),
-  updatedAt: integer("updated_at", { mode: "timestamp" })
+    .default(sql`CURRENT_TIMESTAMP(3)`),
+  updatedAt: ts("updated_at")
     .notNull()
-    .default(sql`(unixepoch())`),
-  ipAddress: text("ip_address"),
+    .default(sql`CURRENT_TIMESTAMP(3)`),
+  ipAddress: varchar("ip_address", { length: 64 }),
   userAgent: text("user_agent"),
-  userId: text("user_id")
+  userId: varchar("user_id", { length: ID_LEN })
     .notNull()
     .references(() => user.id, { onDelete: "cascade" }),
 });
 
-export const account = sqliteTable("account", {
-  id: text("id").primaryKey(),
-  accountId: text("account_id").notNull(),
-  providerId: text("provider_id").notNull(),
-  userId: text("user_id")
+export const account = mysqlTable("account", {
+  id: varchar("id", { length: ID_LEN }).primaryKey(),
+  accountId: varchar("account_id", { length: 255 }).notNull(),
+  providerId: varchar("provider_id", { length: 64 }).notNull(),
+  userId: varchar("user_id", { length: ID_LEN })
     .notNull()
     .references(() => user.id, { onDelete: "cascade" }),
   accessToken: text("access_token"),
   refreshToken: text("refresh_token"),
   idToken: text("id_token"),
-  accessTokenExpiresAt: integer("access_token_expires_at", {
-    mode: "timestamp",
-  }),
-  refreshTokenExpiresAt: integer("refresh_token_expires_at", {
-    mode: "timestamp",
-  }),
-  scope: text("scope"),
-  password: text("password"),
-  createdAt: integer("created_at", { mode: "timestamp" })
+  accessTokenExpiresAt: ts("access_token_expires_at"),
+  refreshTokenExpiresAt: ts("refresh_token_expires_at"),
+  scope: varchar("scope", { length: 255 }),
+  password: varchar("password", { length: 255 }),
+  createdAt: ts("created_at")
     .notNull()
-    .default(sql`(unixepoch())`),
-  updatedAt: integer("updated_at", { mode: "timestamp" })
+    .default(sql`CURRENT_TIMESTAMP(3)`),
+  updatedAt: ts("updated_at")
     .notNull()
-    .default(sql`(unixepoch())`),
+    .default(sql`CURRENT_TIMESTAMP(3)`),
 });
 
-export const verification = sqliteTable("verification", {
-  id: text("id").primaryKey(),
-  identifier: text("identifier").notNull(),
+export const verification = mysqlTable("verification", {
+  id: varchar("id", { length: ID_LEN }).primaryKey(),
+  identifier: varchar("identifier", { length: 255 }).notNull(),
   value: text("value").notNull(),
-  expiresAt: integer("expires_at", { mode: "timestamp" }).notNull(),
-  createdAt: integer("created_at", { mode: "timestamp" })
-    .default(sql`(unixepoch())`),
-  updatedAt: integer("updated_at", { mode: "timestamp" })
-    .default(sql`(unixepoch())`),
+  expiresAt: ts("expires_at").notNull(),
+  createdAt: ts("created_at").default(sql`CURRENT_TIMESTAMP(3)`),
+  updatedAt: ts("updated_at").default(sql`CURRENT_TIMESTAMP(3)`),
 });
 
 /* ------------------------------- 业务表 ------------------------------- */
 
-export const customer = sqliteTable(
+export const customer = mysqlTable(
   "customer",
   {
-    id: text("id").primaryKey(),
+    id: varchar("id", { length: ID_LEN }).primaryKey(),
     // 7 位数字会员号,创建时生成,unique
-    memberNo: text("member_no").notNull().unique(),
-    name: text("name").notNull(),
+    memberNo: varchar("member_no", { length: 16 }).notNull().unique(),
+    name: varchar("name", { length: 64 }).notNull(),
     // 客户微信(仅 BOSS/STAFF 可见,陪玩看不到)
-    wechat: text("wechat"),
+    wechat: varchar("wechat", { length: 64 }),
     note: text("note"),
-    balanceCents: integer("balance_cents").notNull().default(0),
-    createdAt: integer("created_at", { mode: "timestamp" })
+    balanceCents: int("balance_cents").notNull().default(0),
+    createdAt: ts("created_at")
       .notNull()
-      .default(sql`(unixepoch())`),
+      .default(sql`CURRENT_TIMESTAMP(3)`),
   },
   (t) => [
     index("customer_name_idx").on(t.name),
@@ -117,24 +130,26 @@ export const customer = sqliteTable(
   ]
 );
 
-export const playerInvite = sqliteTable(
+export const playerInvite = mysqlTable(
   "player_invite",
   {
-    id: text("id").primaryKey(),
-    inviteToken: text("invite_token").notNull().unique(),
-    createdById: text("created_by_id")
+    id: varchar("id", { length: ID_LEN }).primaryKey(),
+    inviteToken: varchar("invite_token", { length: 128 }).notNull().unique(),
+    createdById: varchar("created_by_id", { length: ID_LEN })
       .notNull()
       .references(() => user.id),
-    playerGender: text("player_gender", { enum: ["MALE", "FEMALE"] }),
-    defaultRateCents: integer("default_rate_cents"),
-    expiresAt: integer("expires_at", { mode: "timestamp" }).notNull(),
-    maxUses: integer("max_uses").notNull().default(1),
-    useCount: integer("use_count").notNull().default(0),
-    usedAt: integer("used_at", { mode: "timestamp" }),
-    usedById: text("used_by_id").references(() => user.id),
-    createdAt: integer("created_at", { mode: "timestamp" })
+    playerGender: mysqlEnum("player_gender", ["MALE", "FEMALE"]),
+    defaultRateCents: int("default_rate_cents"),
+    expiresAt: ts("expires_at").notNull(),
+    maxUses: int("max_uses").notNull().default(1),
+    useCount: int("use_count").notNull().default(0),
+    usedAt: ts("used_at"),
+    usedById: varchar("used_by_id", { length: ID_LEN }).references(
+      () => user.id
+    ),
+    createdAt: ts("created_at")
       .notNull()
-      .default(sql`(unixepoch())`),
+      .default(sql`CURRENT_TIMESTAMP(3)`),
   },
   (t) => [
     index("player_invite_token_idx").on(t.inviteToken),
@@ -142,69 +157,74 @@ export const playerInvite = sqliteTable(
   ]
 );
 
-export const order = sqliteTable(
+export const order = mysqlTable(
   "order",
   {
-    id: text("id").primaryKey(),
-    dispatcherId: text("dispatcher_id")
+    id: varchar("id", { length: ID_LEN }).primaryKey(),
+    dispatcherId: varchar("dispatcher_id", { length: ID_LEN })
       .notNull()
       .references(() => user.id),
-    playerId: text("player_id")
+    playerId: varchar("player_id", { length: ID_LEN })
       .notNull()
       .references(() => user.id),
-    customerId: text("customer_id")
+    customerId: varchar("customer_id", { length: ID_LEN })
       .notNull()
       .references(() => customer.id),
 
-    startAt: integer("start_at", { mode: "timestamp" }).notNull(),
-    endAt: integer("end_at", { mode: "timestamp" }).notNull(),
-    durationMin: integer("duration_min").notNull(),
+    startAt: ts("start_at").notNull(),
+    endAt: ts("end_at").notNull(),
+    durationMin: int("duration_min").notNull(),
 
-    hourlyRateCents: integer("hourly_rate_cents").notNull(),
-    commissionPerHourCents: integer("commission_per_hour_cents").notNull(),
+    hourlyRateCents: int("hourly_rate_cents").notNull(),
+    commissionPerHourCents: int("commission_per_hour_cents").notNull(),
 
     // 三段定价(单位:分)
     // - originalCents = 单价 × 时长(自动算)
     // - discountCents = 优惠金额(默认 0,管理者可设)
     // - payableCents  = 客户实付 = original - discount
-    originalCents: integer("original_cents").notNull(),
-    discountCents: integer("discount_cents").notNull().default(0),
-    payableCents: integer("payable_cents").notNull(),
-    prepayUsedCents: integer("prepay_used_cents").notNull().default(0),
+    originalCents: int("original_cents").notNull(),
+    discountCents: int("discount_cents").notNull().default(0),
+    payableCents: int("payable_cents").notNull(),
+    prepayUsedCents: int("prepay_used_cents").notNull().default(0),
 
     // 陪玩按"原价"结算,不受打折影响(陪玩拿足)
-    commissionCents: integer("commission_cents").notNull(),
-    playerEarnCents: integer("player_earn_cents").notNull(),
+    commissionCents: int("commission_cents").notNull(),
+    playerEarnCents: int("player_earn_cents").notNull(),
 
-    orderStatus: text("order_status", {
-      enum: ["IN_PROGRESS", "COMPLETED", "CANCELED"],
-    })
+    orderStatus: mysqlEnum("order_status", [
+      "IN_PROGRESS",
+      "COMPLETED",
+      "CANCELED",
+    ])
       .notNull()
       .default("IN_PROGRESS"),
-    completedAt: integer("completed_at", { mode: "timestamp" }),
-    canceledAt: integer("canceled_at", { mode: "timestamp" }),
+    completedAt: ts("completed_at"),
+    canceledAt: ts("canceled_at"),
 
     // 取消时记录的纠纷信息(仅 CANCELED 时有意义)
-    cancelFault: text("cancel_fault", {
-      enum: ["PLAYER", "CUSTOMER", "SHOP", "OTHER"],
-    }),
+    cancelFault: mysqlEnum("cancel_fault", [
+      "PLAYER",
+      "CUSTOMER",
+      "SHOP",
+      "OTHER",
+    ]),
     cancelNote: text("cancel_note"),
     /** 取消单给陪玩的补偿金额。> 0 时此单仍需走结算流程 */
-    playerCompensationCents: integer("player_compensation_cents")
+    playerCompensationCents: int("player_compensation_cents")
       .notNull()
       .default(0),
 
-    settleStatus: text("settle_status", { enum: ["UNSETTLED", "SETTLED"] })
+    settleStatus: mysqlEnum("settle_status", ["UNSETTLED", "SETTLED"])
       .notNull()
       .default("UNSETTLED"),
-    settledAt: integer("settled_at", { mode: "timestamp" }),
-    paidMethod: text("paid_method", { enum: ["WECHAT", "ALIPAY"] }),
+    settledAt: ts("settled_at"),
+    paidMethod: mysqlEnum("paid_method", ["WECHAT", "ALIPAY"]),
 
     note: text("note"),
 
-    createdAt: integer("created_at", { mode: "timestamp" })
+    createdAt: ts("created_at")
       .notNull()
-      .default(sql`(unixepoch())`),
+      .default(sql`CURRENT_TIMESTAMP(3)`),
   },
   (t) => [
     index("order_player_idx").on(t.playerId, t.startAt),
@@ -215,25 +235,29 @@ export const order = sqliteTable(
   ]
 );
 
-export const customerBalanceTxn = sqliteTable(
+export const customerBalanceTxn = mysqlTable(
   "customer_balance_txn",
   {
-    id: text("id").primaryKey(),
-    customerId: text("customer_id")
+    id: varchar("id", { length: ID_LEN }).primaryKey(),
+    customerId: varchar("customer_id", { length: ID_LEN })
       .notNull()
       .references(() => customer.id),
-    orderId: text("order_id").references(() => order.id),
-    type: text("type", {
-      enum: ["DEPOSIT", "ORDER_DEBIT", "ORDER_REFUND"],
-    }).notNull(),
-    amountCents: integer("amount_cents").notNull(),
+    orderId: varchar("order_id", { length: ID_LEN }).references(
+      () => order.id
+    ),
+    type: mysqlEnum("type", [
+      "DEPOSIT",
+      "ORDER_DEBIT",
+      "ORDER_REFUND",
+    ]).notNull(),
+    amountCents: int("amount_cents").notNull(),
     note: text("note"),
-    createdById: text("created_by_id")
+    createdById: varchar("created_by_id", { length: ID_LEN })
       .notNull()
       .references(() => user.id),
-    createdAt: integer("created_at", { mode: "timestamp" })
+    createdAt: ts("created_at")
       .notNull()
-      .default(sql`(unixepoch())`),
+      .default(sql`CURRENT_TIMESTAMP(3)`),
   },
   (t) => [
     index("customer_balance_txn_customer_idx").on(t.customerId, t.createdAt),

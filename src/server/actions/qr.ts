@@ -32,11 +32,11 @@ async function verifyQrSecurityCode(userId: string, securityCode: string) {
     };
   }
 
-  const row = await db
+  const [row] = await db
     .select({ qrSecurityCodeHash: user.qrSecurityCodeHash })
     .from(user)
     .where(eq(user.id, userId))
-    .get();
+    .limit(1);
   if (!row?.qrSecurityCodeHash) {
     return { ok: false as const, error: "请联系店长先设置收款码安全码" };
   }
@@ -108,11 +108,11 @@ export async function deleteQrCodeAction(input: {
   if (!codeCheck.ok) return codeCheck;
   const field = fieldFor(input.type);
 
-  const row = await db
+  const [row] = await db
     .select({ path: user[field] })
     .from(user)
     .where(eq(user.id, me.id))
-    .get();
+    .limit(1);
 
   if (row?.path) {
     await unlink(join(UPLOAD_ROOT, row.path)).catch(() => {});

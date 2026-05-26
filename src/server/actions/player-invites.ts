@@ -54,11 +54,11 @@ export async function createPlayerInviteAction(
 
 export async function deletePlayerInviteAction({ id }: { id: string }) {
   await requireSession({ role: ["BOSS", "STAFF"] });
-  const target = await db
+  const [target] = await db
     .select({ id: playerInvite.id })
     .from(playerInvite)
     .where(eq(playerInvite.id, id))
-    .get();
+    .limit(1);
   if (!target) return { ok: false as const, error: "链接不存在" };
   await db.delete(playerInvite).where(eq(playerInvite.id, id));
   revalidatePath("/staff");

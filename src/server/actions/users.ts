@@ -134,11 +134,11 @@ async function createUser(opts: {
     qrSecurityCodeHash,
   } = opts;
 
-  const dup = await db
+  const [dup] = await db
     .select({ id: user.id })
     .from(user)
     .where(eq(user.username, username))
-    .get();
+    .limit(1);
   if (dup) return { ok: false, error: "用户名已存在" };
 
   const initialPassword = password ?? generateInitialPassword();
@@ -214,11 +214,11 @@ export async function updatePlayerProfileAction(
     return { ok: false as const, error: "默认单价必须大于 0" };
   }
 
-  const target = await db
+  const [target] = await db
     .select({ role: user.role })
     .from(user)
     .where(eq(user.id, parsed.data.id))
-    .get();
+    .limit(1);
   if (!target || target.role !== "PLAYER") {
     return { ok: false as const, error: "陪玩不存在" };
   }
@@ -263,11 +263,11 @@ export async function toggleUserActiveAction(input: {
     return { ok: false as const, error: "不能停用自己的账号" };
   }
 
-  const target = await db
+  const [target] = await db
     .select({ role: user.role })
     .from(user)
     .where(eq(user.id, input.id))
-    .get();
+    .limit(1);
   if (!target || target.role === "BOSS") {
     return { ok: false as const, error: "目标账号不存在或无权操作" };
   }
@@ -292,11 +292,11 @@ export async function deleteStaffAction(input: { id: string }) {
     return { ok: false as const, error: "不能删除自己的账号" };
   }
 
-  const target = await db
+  const [target] = await db
     .select({ role: user.role })
     .from(user)
     .where(eq(user.id, input.id))
-    .get();
+    .limit(1);
   if (!target) {
     return { ok: false as const, error: "账号不存在" };
   }
@@ -327,11 +327,11 @@ export async function resetUserPasswordAction(input: {
 > {
   const { user: me } = await requireSession({ role: ["BOSS", "STAFF"] });
 
-  const target = await db
+  const [target] = await db
     .select({ role: user.role })
     .from(user)
     .where(eq(user.id, input.id))
-    .get();
+    .limit(1);
   if (!target || target.role === "BOSS") {
     return { ok: false, error: "目标账号不存在或无权操作" };
   }
@@ -376,11 +376,11 @@ export async function resetPlayerQrSecurityCodeAction(input: {
     return { ok: false, error: parsed.error.errors[0]?.message ?? "参数错误" };
   }
 
-  const target = await db
+  const [target] = await db
     .select({ role: user.role })
     .from(user)
     .where(eq(user.id, parsed.data.id))
-    .get();
+    .limit(1);
   if (!target || target.role !== "PLAYER") {
     return { ok: false, error: "陪玩不存在" };
   }
@@ -415,7 +415,7 @@ export async function completePlayerInviteAction(
     return { ok: false, error: parsed.error.errors[0]?.message ?? "参数错误" };
   }
 
-  const invite = await db
+  const [invite] = await db
     .select({
       id: playerInvite.id,
       playerGender: playerInvite.playerGender,
@@ -427,7 +427,7 @@ export async function completePlayerInviteAction(
     })
     .from(playerInvite)
     .where(eq(playerInvite.inviteToken, parsed.data.token))
-    .get();
+    .limit(1);
   if (!invite) return { ok: false, error: "链接不存在" };
   // multi-use check
   if (invite.maxUses > 0 && invite.useCount >= invite.maxUses) {
@@ -461,10 +461,9 @@ export async function completePlayerInviteAction(
   if (!alipayUpload.ok) return { ok: false, error: alipayUpload.error };
 
   // Multi-use: just increment useCount
-  db.update(playerInvite)
+  await db.update(playerInvite)
     .set({ useCount: sql`${playerInvite.useCount} + 1`, usedAt: new Date() })
-    .where(eq(playerInvite.id, inviteId))
-    .run();
+    .where(eq(playerInvite.id, inviteId));
 
   const res = await createUser({
     username: parsed.data.username,
@@ -481,11 +480,11 @@ export async function completePlayerInviteAction(
     return res;
   }
 
-  const created = await db
+  const [created] = await db
     .select({ id: user.id })
     .from(user)
     .where(eq(user.username, parsed.data.username))
-    .get();
+    .limit(1);
   if (!created) {
     return { ok: false, error: "创建失败" };
   }
