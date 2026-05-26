@@ -1,6 +1,7 @@
 import { Users } from "lucide-react";
 import { requireSession } from "@/lib/auth-helpers";
 import { customerSummary } from "@/server/stats";
+import { listActivePlayersAction } from "@/server/actions/customers";
 import { PageHeader } from "@/components/page-header";
 import { EmptyState } from "@/components/empty-state";
 import { formatYuan } from "@/lib/format";
@@ -8,7 +9,10 @@ import { CustomersList } from "./customers-list";
 
 export default async function CustomersPage() {
   await requireSession({ role: ["BOSS", "STAFF"] });
-  const rows = await customerSummary();
+  const [rows, players] = await Promise.all([
+    customerSummary(),
+    listActivePlayersAction(),
+  ]);
 
   const totalSpent = rows.reduce((s, r) => s + r.payableCents, 0);
   const totalBalance = rows.reduce((s, r) => s + r.balanceCents, 0);
@@ -39,6 +43,7 @@ export default async function CustomersPage() {
             payableCents: c.payableCents,
             balanceCents: c.balanceCents,
           }))}
+          players={players}
         />
       )}
     </>

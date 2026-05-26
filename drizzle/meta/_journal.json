@@ -8,6 +8,13 @@
       "when": 1779789574246,
       "tag": "0000_mighty_jack_power",
       "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "5",
+      "when": 1779790051650,
+      "tag": "0001_stiff_randall_flagg",
+      "breakpoints": true
     }
   ]
 }

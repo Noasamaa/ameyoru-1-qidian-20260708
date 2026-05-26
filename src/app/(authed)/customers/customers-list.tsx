@@ -4,9 +4,11 @@ import { useEffect, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 import {
+  Check,
   FileText,
   Loader2,
   MessageCircle,
+  MinusCircle,
   Pencil,
   WalletCards,
 } from "lucide-react";
@@ -25,8 +27,10 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { avatarInitial, formatDuration, formatYuan } from "@/lib/format";
+import { cn } from "@/lib/utils";
 import {
   addCustomerDepositAction,
+  deductCustomerBalanceAction,
   getCustomerLedgerAction,
   updateCustomerAction,
 } from "@/server/actions/customers";
@@ -43,6 +47,12 @@ interface CustomerRow {
   balanceCents: number;
 }
 
+interface PlayerOption {
+  id: string;
+  name: string;
+  username: string;
+}
+
 type CustomerBalanceLedgerRow = {
   kind: "BALANCE";
   id: string;
@@ -56,6 +66,7 @@ type CustomerBalanceLedgerRow = {
   orderId: string | null;
   orderStartAt: string | null;
   orderPayableCents: number | null;
+  playerNames: string[] | null;
 };
 
 type CustomerOrderLedgerRow = {
@@ -77,9 +88,16 @@ type CustomerOrderLedgerRow = {
 
 type CustomerLedgerRow = CustomerBalanceLedgerRow | CustomerOrderLedgerRow;
 
-export function CustomersList({ customers }: { customers: CustomerRow[] }) {
+export function CustomersList({
+  customers,
+  players,
+}: {
+  customers: CustomerRow[];
+  players: PlayerOption[];
+}) {
   const [editing, setEditing] = useState<CustomerRow | null>(null);
   const [depositing, setDepositing] = useState<CustomerRow | null>(null);
+  const [deducting, setDeducting] = useState<CustomerRow | null>(null);
   const [ledgerCustomer, setLedgerCustomer] = useState<CustomerRow | null>(null);
   return (
     <>
@@ -148,6 +166,17 @@ export function CustomersList({ customers }: { customers: CustomerRow[] }) {
                   <WalletCards />
                   充值预存
                 </Button>
+                {c.balanceCents > 0 && (
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => setDeducting(c)}
+                    className="flex-1 sm:flex-none"
+                  >
+                    <MinusCircle />
+                    扣减
+                  </Button>
+                )}
                 <Button
                   variant="ghost"
                   size="sm"
@@ -185,6 +214,15 @@ export function CustomersList({ customers }: { customers: CustomerRow[] }) {
           key={depositing.id}
           customer={depositing}
           onClose={() => setDepositing(null)}
+        />
+      )}
+
+      {deducting && (
+        <DeductDialog
+          key={deducting.id}
+          customer={deducting}
+          players={players}
+          onClose={() => setDeducting(null)}
         />
       )}
 
@@ -365,7 +403,162 @@ const txnLabel: Record<CustomerBalanceTxnType, string> = {
   DEPOSIT: "充值",
   ORDER_DEBIT: "预存变动 · 订单抵扣",
   ORDER_REFUND: "预存变动 · 取消退回",
+  MANUAL_DEDUCT: "预存扣减(老板提取)",
 };
+
+function DeductDialog({
+  customer,
+  players,
+  onClose,
+}: {
+  customer: CustomerRow;
+  players: PlayerOption[];
+  onClose: () => void;
+}) {
+  const router = useRouter();
+  const [amount, setAmount] = useState("");
+  const [note, setNote] = useState("");
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+  const [pending, startTransition] = useTransition();
+
+  function togglePlayer(id: string) {
+    setSelectedIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  }
+
+  function handleSubmit(e: React.FormEvent) {
+    e.preventDefault();
+    if (selectedIds.size === 0) {
+      toast.error("请至少选一个陪玩");
+      return;
+    }
+    startTransition(async () => {
+      const res = await deductCustomerBalanceAction({
+        customerId: customer.id,
+        amountYuan: amount,
+        playerIds: Array.from(selectedIds),
+        note: note.trim() || null,
+      });
+      if (!res.ok) {
+        toast.error(res.error);
+        return;
+      }
+      toast.success("已扣减预存余额");
+      onClose();
+      router.refresh();
+    });
+  }
+
+  return (
+    <Dialog open onOpenChange={(v) => !v && onClose()}>
+      <DialogContent>
+        <DialogHeader>
+          <DialogTitle>扣减预存余额</DialogTitle>
+          <DialogDescription>
+            {customer.name} · 当前预存余额{" "}
+            <span className="font-mono">
+              {formatYuan(customer.balanceCents)}
+            </span>
+          </DialogDescription>
+        </DialogHeader>
+        <form onSubmit={handleSubmit} className="space-y-4">
+          <div className="space-y-2">
+            <Label htmlFor="deduct-amount">扣减金额(元)</Label>
+            <Input
+              id="deduct-amount"
+              type="number"
+              step="0.01"
+              min="0.01"
+              max={(customer.balanceCents / 100).toFixed(2)}
+              value={amount}
+              onChange={(e) => setAmount(e.target.value)}
+              placeholder="100"
+              required
+              autoFocus
+            />
+          </div>
+
+          <div className="space-y-2">
+            <Label>关联陪玩(可多选)</Label>
+            {players.length === 0 ? (
+              <p className="text-sm text-muted-foreground">暂无在职陪玩</p>
+            ) : (
+              <div className="max-h-48 overflow-y-auto rounded-md border">
+                <ul className="divide-y">
+                  {players.map((p) => {
+                    const checked = selectedIds.has(p.id);
+                    return (
+                      <li key={p.id}>
+                        <button
+                          type="button"
+                          onClick={() => togglePlayer(p.id)}
+                          className={cn(
+                            "flex w-full items-center gap-3 px-3 py-2 text-left text-sm transition-colors hover:bg-accent",
+                            checked && "bg-primary/10"
+                          )}
+                        >
+                          <span
+                            className={cn(
+                              "flex size-4 shrink-0 items-center justify-center rounded border",
+                              checked
+                                ? "border-primary bg-primary text-primary-foreground"
+                                : "border-input"
+                            )}
+                          >
+                            {checked && <Check className="size-3" />}
+                          </span>
+                          <span className="flex-1 truncate">{p.name}</span>
+                          {p.username && (
+                            <span className="font-mono text-xs text-muted-foreground">
+                              @{p.username}
+                            </span>
+                          )}
+                        </button>
+                      </li>
+                    );
+                  })}
+                </ul>
+              </div>
+            )}
+            <p className="text-xs text-muted-foreground">
+              已选 {selectedIds.size} 人
+            </p>
+          </div>
+
+          <div className="space-y-2">
+            <Label htmlFor="deduct-note">备注(选填)</Label>
+            <Input
+              id="deduct-note"
+              value={note}
+              onChange={(e) => setNote(e.target.value)}
+              placeholder="比如:陪玩私下接单 / 私单线下结清"
+              maxLength={200}
+            />
+          </div>
+
+          <DialogFooter>
+            <Button
+              type="button"
+              variant="outline"
+              onClick={onClose}
+              disabled={pending}
+            >
+              取消
+            </Button>
+            <Button type="submit" disabled={pending}>
+              {pending && <Loader2 className="animate-spin" />}
+              确认扣减
+            </Button>
+          </DialogFooter>
+        </form>
+      </DialogContent>
+    </Dialog>
+  );
+}
 
 const orderStatusLabel: Record<OrderStatus, string> = {
   IN_PROGRESS: "进行中",
@@ -479,6 +672,9 @@ function BalanceLedgerRow({ row }: { row: CustomerBalanceLedgerRow }) {
         </div>
         <div className="mt-1 text-xs text-muted-foreground">
           操作人 {row.actorName}
+          {row.playerNames && row.playerNames.length > 0
+            ? ` · 陪玩 ${row.playerNames.join("、")}`
+            : ""}
           {row.orderId && row.orderStartAt
             ? ` · 订单 ${new Date(row.orderStartAt).toLocaleString("zh-CN", {
                 hour12: false,

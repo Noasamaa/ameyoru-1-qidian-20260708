@@ -1,12 +1,18 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
-import { aliasedTable, desc, eq, sql } from "drizzle-orm";
+import { aliasedTable, and, asc, desc, eq, inArray, sql } from "drizzle-orm";
 import { z } from "zod";
 import { db } from "@/db";
-import { customer, customerBalanceTxn, order, user } from "@/db/schema";
+import {
+  customer,
+  customerBalanceTxn,
+  customerBalanceTxnPlayer,
+  order,
+  user,
+} from "@/db/schema";
 import { requireSession } from "@/lib/auth-helpers";
-import { yuanStringToCents } from "@/lib/format";
+import { formatYuan, yuanStringToCents } from "@/lib/format";
 import { nanoid } from "../id";
 
 const optionalTrimmed = (max: number) =>
@@ -35,6 +41,13 @@ const updateSchema = z.object({
 const depositSchema = z.object({
   customerId: z.string(),
   amountYuan: z.string().min(1, "请填写充值金额"),
+  note: optionalTrimmed(200),
+});
+
+const deductSchema = z.object({
+  customerId: z.string(),
+  amountYuan: z.string().min(1, "请填写扣减金额"),
+  playerIds: z.array(z.string()).min(1, "请至少选一个陪玩"),
   note: optionalTrimmed(200),
 });
 
@@ -104,6 +117,95 @@ export async function addCustomerDepositAction(
   return { ok: true as const };
 }
 
+export async function deductCustomerBalanceAction(
+  input: z.infer<typeof deductSchema>
+) {
+  const { user: me } = await requireSession({ role: ["BOSS", "STAFF"] });
+  const parsed = deductSchema.safeParse(input);
+  if (!parsed.success) {
+    return {
+      ok: false as const,
+      error: parsed.error.errors[0]?.message ?? "参数错误",
+    };
+  }
+  const { customerId, amountYuan, playerIds, note } = parsed.data;
+  const amountCents = yuanStringToCents(amountYuan);
+  if (amountCents <= 0) {
+    return { ok: false as const, error: "扣减金额必须大于 0" };
+  }
+
+  const uniquePlayerIds = Array.from(new Set(playerIds));
+  const players = await db
+    .select({ id: user.id })
+    .from(user)
+    .where(
+      and(
+        inArray(user.id, uniquePlayerIds),
+        eq(user.role, "PLAYER"),
+        eq(user.active, true)
+      )
+    );
+  if (players.length !== uniquePlayerIds.length) {
+    return { ok: false as const, error: "存在无效或已停用的陪玩" };
+  }
+
+  const [existing] = await db
+    .select({ id: customer.id, balanceCents: customer.balanceCents })
+    .from(customer)
+    .where(eq(customer.id, customerId))
+    .limit(1);
+  if (!existing) return { ok: false as const, error: "客户不存在" };
+  if (existing.balanceCents < amountCents) {
+    return {
+      ok: false as const,
+      error: `余额不足(当前 ${formatYuan(existing.balanceCents)})`,
+    };
+  }
+
+  const txnId = nanoid();
+  await db.transaction(async (tx) => {
+    await tx
+      .update(customer)
+      .set({ balanceCents: sql`${customer.balanceCents} - ${amountCents}` })
+      .where(eq(customer.id, customerId));
+
+    await tx.insert(customerBalanceTxn).values({
+      id: txnId,
+      customerId,
+      type: "MANUAL_DEDUCT",
+      amountCents: -amountCents,
+      note,
+      createdById: me.id,
+    });
+
+    await tx.insert(customerBalanceTxnPlayer).values(
+      uniquePlayerIds.map((playerId) => ({
+        id: nanoid(),
+        txnId,
+        playerId,
+      }))
+    );
+  });
+
+  revalidatePath("/customers");
+  revalidatePath("/orders/new");
+  return { ok: true as const };
+}
+
+export async function listActivePlayersAction() {
+  await requireSession({ role: ["BOSS", "STAFF"] });
+  const rows = await db
+    .select({ id: user.id, name: user.name, username: user.username })
+    .from(user)
+    .where(and(eq(user.role, "PLAYER"), eq(user.active, true)))
+    .orderBy(asc(user.name));
+  return rows.map((r) => ({
+    id: r.id,
+    name: r.name,
+    username: r.username ?? "",
+  }));
+}
+
 export async function getCustomerLedgerAction(input: {
   customerId: string;
 }) {
@@ -130,6 +232,27 @@ export async function getCustomerLedgerAction(input: {
     .where(eq(customerBalanceTxn.customerId, input.customerId))
     .orderBy(desc(customerBalanceTxn.createdAt))
     .limit(100);
+
+  // 拉手动扣减关联的陪玩名单
+  const manualDeductTxnIds = balanceRows
+    .filter((r) => r.type === "MANUAL_DEDUCT")
+    .map((r) => r.id);
+  const playerByTxn = new Map<string, string[]>();
+  if (manualDeductTxnIds.length > 0) {
+    const playerRows = await db
+      .select({
+        txnId: customerBalanceTxnPlayer.txnId,
+        playerName: user.name,
+      })
+      .from(customerBalanceTxnPlayer)
+      .innerJoin(user, eq(user.id, customerBalanceTxnPlayer.playerId))
+      .where(inArray(customerBalanceTxnPlayer.txnId, manualDeductTxnIds));
+    for (const row of playerRows) {
+      const arr = playerByTxn.get(row.txnId) ?? [];
+      arr.push(row.playerName);
+      playerByTxn.set(row.txnId, arr);
+    }
+  }
 
   const orderRows = await db
     .select({
@@ -182,6 +305,7 @@ export async function getCustomerLedgerAction(input: {
       orderId: r.orderId,
       orderStartAt: r.orderStartAt?.toISOString() ?? null,
       orderPayableCents: r.orderPayableCents,
+      playerNames: playerByTxn.get(r.id) ?? null,
     })),
   ]
     .sort((a, b) => Date.parse(b.occurredAt) - Date.parse(a.occurredAt))

@@ -249,6 +249,7 @@ export const customerBalanceTxn = mysqlTable(
       "DEPOSIT",
       "ORDER_DEBIT",
       "ORDER_REFUND",
+      "MANUAL_DEDUCT",
     ]).notNull(),
     amountCents: int("amount_cents").notNull(),
     note: text("note"),
@@ -265,6 +266,27 @@ export const customerBalanceTxn = mysqlTable(
   ]
 );
 
+/**
+ * MANUAL_DEDUCT 交易关联的陪玩(老板从客户预存里抽走金额时,记录是给哪些陪玩分账)。
+ * 一笔扣减可关联多个陪玩。
+ */
+export const customerBalanceTxnPlayer = mysqlTable(
+  "customer_balance_txn_player",
+  {
+    id: varchar("id", { length: ID_LEN }).primaryKey(),
+    txnId: varchar("txn_id", { length: ID_LEN })
+      .notNull()
+      .references(() => customerBalanceTxn.id, { onDelete: "cascade" }),
+    playerId: varchar("player_id", { length: ID_LEN })
+      .notNull()
+      .references(() => user.id),
+  },
+  (t) => [
+    index("cbtp_txn_idx").on(t.txnId),
+    index("cbtp_player_idx").on(t.playerId),
+  ]
+);
+
 /* ------------------------------- 类型 ------------------------------- */
 
 export type Role = "BOSS" | "STAFF" | "PLAYER";
@@ -276,4 +298,5 @@ export type CancelFault = "PLAYER" | "CUSTOMER" | "SHOP" | "OTHER";
 export type CustomerBalanceTxnType =
   | "DEPOSIT"
   | "ORDER_DEBIT"
-  | "ORDER_REFUND";
+  | "ORDER_REFUND"
+  | "MANUAL_DEDUCT";
