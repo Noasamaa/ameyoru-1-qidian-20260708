@@ -7,7 +7,7 @@ import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { centsToYuanString } from "@/lib/format";
+import { PRICE_BUCKETS_CENTS } from "@/lib/constants";
 import { completePlayerInviteAction } from "@/server/actions/users";
 import { authClient } from "@/lib/auth-client";
 import type { PlayerGender } from "@/db/schema";
@@ -29,9 +29,12 @@ export function PlayerInviteForm({
   const [securityCode, setSecurityCode] = useState("");
   const [confirmSecurityCode, setConfirmSecurityCode] = useState("");
   const [playerGender, setPlayerGender] = useState<PlayerGender>(initialGender);
-  const [defaultRate, setDefaultRate] = useState(
-    initialGender === "MALE" ? "35" : "40"
-  );
+  const [defaultRate, setDefaultRate] = useState(() => {
+    const buckets = PRICE_BUCKETS_CENTS[initialGender];
+    return buckets.includes(initialRateCents)
+      ? String(initialRateCents / 100)
+      : String(buckets[0] / 100);
+  });
   const [wechatQr, setWechatQr] = useState<File | null>(null);
   const [alipayQr, setAlipayQr] = useState<File | null>(null);
 
@@ -199,12 +202,10 @@ export function PlayerInviteForm({
               onChange={(e) => setDefaultRate(e.target.value)}
               className="flex h-9 w-full rounded-md border border-input bg-background px-3 text-sm shadow-xs outline-none focus-visible:ring-2 focus-visible:ring-ring/40"
             >
-              {(playerGender === "MALE"
-                ? ["35", "40", "45", "50"]
-                : ["40", "45", "50", "55"]
-              ).map((v) => (
-                <option key={v} value={v}>{v}</option>
-              ))}
+              {PRICE_BUCKETS_CENTS[playerGender].map((c) => {
+                const v = String(c / 100);
+                return <option key={v} value={v}>{v}</option>;
+              })}
             </select>
           </div>
         </div>
