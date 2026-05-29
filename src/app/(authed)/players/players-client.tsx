@@ -39,6 +39,10 @@ import {
 import { EmptyState } from "@/components/empty-state";
 import { avatarInitial, centsToYuanString, formatYuan } from "@/lib/format";
 import {
+  ALL_PRICE_BUCKETS_CENTS,
+  PRICE_BUCKETS_CENTS,
+} from "@/lib/constants";
+import {
   createPlayerAction,
   resetPlayerQrSecurityCodeAction,
   resetUserPasswordAction,
@@ -67,11 +71,6 @@ interface Credential {
   username: string;
   password: string;
 }
-
-const PRICE_BUCKETS: Record<PlayerGender, number[]> = {
-  MALE: [3500, 4000, 4500, 5000],
-  FEMALE: [4000, 4500, 5000, 5500],
-};
 
 const genderLabel: Record<PlayerGender, string> = {
   MALE: "男陪",
@@ -169,7 +168,7 @@ export function PlayersClient({
           <PlayerPriceSection
             title="男陪"
             players={groupedPlayers.MALE}
-            buckets={PRICE_BUCKETS.MALE}
+            buckets={PRICE_BUCKETS_CENTS.MALE}
             canManage={canManage}
             pending={pending}
             onEdit={setEditingPlayer}
@@ -180,7 +179,7 @@ export function PlayersClient({
           <PlayerPriceSection
             title="女陪"
             players={groupedPlayers.FEMALE}
-            buckets={PRICE_BUCKETS.FEMALE}
+            buckets={PRICE_BUCKETS_CENTS.FEMALE}
             canManage={canManage}
             pending={pending}
             onEdit={setEditingPlayer}
@@ -192,7 +191,7 @@ export function PlayersClient({
             <PlayerPriceSection
               title="未分类"
               players={groupedPlayers.UNSET}
-              buckets={[3500, 4000, 4500, 5000, 5500]}
+              buckets={ALL_PRICE_BUCKETS_CENTS}
               canManage={canManage}
               pending={pending}
               onEdit={setEditingPlayer}
@@ -554,12 +553,10 @@ function CreatePlayerDialog({
                 onChange={(e) => setDefaultRate(e.target.value)}
                 className="flex h-9 w-full rounded-md border border-input bg-background px-3 text-sm shadow-xs outline-none focus-visible:ring-2 focus-visible:ring-ring/40"
               >
-                {(playerGender === "MALE"
-                  ? ["35", "40", "45", "50"]
-                  : ["40", "45", "50", "55"]
-                ).map((v) => (
-                  <option key={v} value={v}>{v}</option>
-                ))}
+                {PRICE_BUCKETS_CENTS[playerGender].map((c) => {
+                  const v = String(c / 100);
+                  return <option key={v} value={v}>{v}</option>;
+                })}
               </select>
             </div>
           </div>

@@ -18,7 +18,11 @@ import {
   formatYuan,
   yuanStringToCents,
 } from "@/lib/format";
-import { DEFAULT_COMMISSION_PER_HOUR_CENTS } from "@/lib/constants";
+import {
+  ALL_PRICE_BUCKETS_CENTS,
+  DEFAULT_COMMISSION_PER_HOUR_CENTS,
+  PRICE_BUCKETS_CENTS,
+} from "@/lib/constants";
 import { createOrderAction } from "@/server/actions/orders";
 import type { PlayerGender } from "@/db/schema";
 
@@ -36,11 +40,6 @@ interface Player {
   playerGender: PlayerGender | null;
   defaultRateCents: number | null;
 }
-
-const PRICE_BUCKETS: Record<PlayerGender, number[]> = {
-  MALE: [3500, 4000, 4500, 5000],
-  FEMALE: [4000, 4500, 5000, 5500],
-};
 
 export function OrderForm({
   isManager,
@@ -484,14 +483,14 @@ function PlayerPicker({
         <PlayerPickerSection
           title="男陪"
           players={grouped.MALE}
-          buckets={PRICE_BUCKETS.MALE}
+          buckets={PRICE_BUCKETS_CENTS.MALE}
           selectedId={selectedId}
           onSelect={onSelect}
         />
         <PlayerPickerSection
           title="女陪"
           players={grouped.FEMALE}
-          buckets={PRICE_BUCKETS.FEMALE}
+          buckets={PRICE_BUCKETS_CENTS.FEMALE}
           selectedId={selectedId}
           onSelect={onSelect}
         />
@@ -501,7 +500,7 @@ function PlayerPicker({
         <PlayerPickerSection
           title="未分类"
           players={grouped.UNSET}
-          buckets={[3500, 4000, 4500, 5000, 5500]}
+          buckets={ALL_PRICE_BUCKETS_CENTS}
           selectedId={selectedId}
           onSelect={onSelect}
         />

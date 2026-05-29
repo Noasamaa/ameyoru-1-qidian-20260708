@@ -39,6 +39,7 @@ import {
 import { EmptyState } from "@/components/empty-state";
 import { cn } from "@/lib/utils";
 import { avatarInitial, formatYuan } from "@/lib/format";
+import { PRICE_BUCKETS_CENTS } from "@/lib/constants";
 import {
   createPlayerInviteAction,
   deletePlayerInviteAction,
@@ -49,6 +50,7 @@ import {
   resetUserPasswordAction,
   toggleUserActiveAction,
 } from "@/server/actions/users";
+import type { PlayerGender } from "@/db/schema";
 
 interface Staff {
   id: string;
@@ -481,12 +483,10 @@ function CreateInviteDialog({
                 onChange={(e) => setDefaultRate(e.target.value)}
                 className="flex h-9 w-full rounded-md border border-input bg-background px-3 text-sm shadow-xs outline-none focus-visible:ring-2 focus-visible:ring-ring/40"
               >
-                {(playerGender === "MALE"
-                  ? ["35", "40", "45", "50"]
-                  : ["40", "45", "50", "55"]
-                ).map((v) => (
-                  <option key={v} value={v}>{v}</option>
-                ))}
+                {PRICE_BUCKETS_CENTS[playerGender as PlayerGender].map((c) => {
+                  const v = String(c / 100);
+                  return <option key={v} value={v}>{v}</option>;
+                })}
               </select>
             </div>
           </div>
