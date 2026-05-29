@@ -17,23 +17,13 @@ import {
   formatRelativeDateTime,
   formatYuan,
 } from "@/lib/format";
-import { QuickOrderCard } from "./quick-order-card";
 
 export async function PlayerOverview({
   userId,
   userName,
-  defaultRateCents,
-  activeOrder,
 }: {
   userId: string;
   userName: string;
-  defaultRateCents: number | null;
-  activeOrder: {
-    id: string;
-    startAt: string;
-    hourlyRateCents: number;
-    customerName: string;
-  } | null;
 }) {
   const [today, week, month, weekRank, monthRank, recent] = await Promise.all([
     playerSummary(userId, "today"),
@@ -73,11 +63,6 @@ export async function PlayerOverview({
             </Link>
           </Button>
         }
-      />
-
-      <QuickOrderCard
-        defaultRateCents={defaultRateCents}
-        activeOrder={activeOrder}
       />
 
       <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
