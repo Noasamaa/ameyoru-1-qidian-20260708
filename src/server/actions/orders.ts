@@ -261,7 +261,7 @@ export async function createOrderAction(input: CreateOrderInput) {
 }
 
 export async function completeOrderAction(input: { id: string }) {
-  const { user: me } = await requireSession();
+  const { user: me } = await requireSession({ role: ["BOSS", "STAFF"] });
   const [target] = await db
     .select({
       playerId: order.playerId,
@@ -275,9 +275,6 @@ export async function completeOrderAction(input: { id: string }) {
   if (!target) return { ok: false as const, error: "订单不存在" };
   if (target.orderStatus !== "IN_PROGRESS") {
     return { ok: false as const, error: "订单已不是进行中状态" };
-  }
-  if (me.role === "PLAYER" && target.playerId !== me.id) {
-    return { ok: false as const, error: "无权操作" };
   }
   await db
     .update(order)

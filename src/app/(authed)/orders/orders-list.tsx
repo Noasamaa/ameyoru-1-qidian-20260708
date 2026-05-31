@@ -667,7 +667,7 @@ function ActionBar({
   onUnsettle: () => void;
 }) {
   if (order.orderStatus === "IN_PROGRESS") {
-    const canComplete = canManage || isOwnOrder;
+    const canComplete = canManage;
     if (!canComplete) return null;
     return (
       <div className="border-t px-6 py-4 space-y-2">
