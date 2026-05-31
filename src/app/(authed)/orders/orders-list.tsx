@@ -66,7 +66,6 @@ import {
   settleOrderAction,
   unsettleOrderAction,
 } from "@/server/actions/orders";
-import { exportOrdersCSV } from "@/server/actions/export";
 
 interface OrderRow {
   id: string;
@@ -133,7 +132,6 @@ export function OrdersList({
   const [batchOpen, setBatchOpen] = useState(false);
   const [batchMethod, setBatchMethod] = useState<"WECHAT" | "ALIPAY" | undefined>(undefined);
   const [batchPending, startBatchTransition] = useTransition();
-  const [exportPending, startExportTransition] = useTransition();
 
   // Orders are already filtered server-side; show all passed orders
   const filtered = orders;
@@ -368,7 +366,7 @@ function OrderDetailSheet({
   const [adjustOpen, setAdjustOpen] = useState(false);
 
   const canManage = role === "BOSS" || role === "STAFF";
-  const canBoss = role === "BOSS" || role === "STAFF";
+  // canManage removed - same as canManage
   const hasDiscount = !!(order && order.discountCents > 0);
   const isCanceled = order?.orderStatus === "CANCELED";
   const payoutCents = order
@@ -623,7 +621,7 @@ function OrderDetailSheet({
               <ActionBar
                 order={order}
                 canManage={canManage}
-                canBoss={canBoss}
+                canManage={canManage}
                 isOwnOrder={order.playerId === myId}
                 pending={pending}
                 onComplete={() =>
@@ -692,7 +690,7 @@ function OrderDetailSheet({
 function ActionBar({
   order,
   canManage,
-  canBoss,
+  canManage,
   isOwnOrder,
   pending,
   onComplete,
@@ -703,7 +701,7 @@ function ActionBar({
 }: {
   order: OrderRow;
   canManage: boolean;
-  canBoss: boolean;
+  canManage: boolean;
   isOwnOrder: boolean;
   pending: boolean;
   onComplete: () => void;
@@ -800,7 +798,7 @@ function ActionBar({
   }
 
   // 已结算 — 仅 BOSS 可撤销/取消
-  if (order.settleStatus === "SETTLED" && canBoss) {
+  if (order.settleStatus === "SETTLED" && canManage) {
     return (
       <div className="border-t px-6 py-4 space-y-2">
         <Button

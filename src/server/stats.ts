@@ -285,21 +285,30 @@ export async function recentOrders(opts: { playerId?: string; limit?: number }) 
 }
 
 export async function dailyRevenue(days: number): Promise<{ date: string; cents: number }[]> {
-  const results: { date: string; cents: number }[] = [];
   const now = new Date();
+  const from = new Date(now);
+  from.setDate(from.getDate() - days + 1);
+  from.setHours(0, 0, 0, 0);
+
+  const rows = await db
+    .select({
+      d: sql<string>`DATE(${order.startAt})`,
+      s: sum(order.payableCents).mapWith(Number),
+    })
+    .from(order)
+    .where(and(eq(order.orderStatus, "COMPLETED"), gte(order.startAt, from), lte(order.startAt, now)))
+    .groupBy(sql`DATE(${order.startAt})`)
+    .orderBy(sql`DATE(${order.startAt})`);
+
+  const map = new Map(rows.map((r) => [r.d, r.s ?? 0]));
+
+  // Fill in all days (including zero-revenue days)
+  const results: { date: string; cents: number }[] = [];
   for (let i = days - 1; i >= 0; i--) {
     const d = new Date(now);
     d.setDate(d.getDate() - i);
-    const from = new Date(d.getFullYear(), d.getMonth(), d.getDate(), 0, 0, 0);
-    const to = new Date(d.getFullYear(), d.getMonth(), d.getDate(), 23, 59, 59, 999);
-    const [row] = await db
-      .select({ s: sum(order.payableCents).mapWith(Number) })
-      .from(order)
-      .where(and(eq(order.orderStatus, "COMPLETED"), gte(order.startAt, from), lte(order.startAt, to)));
-    results.push({
-      date: `${d.getMonth() + 1}/${d.getDate()}`,
-      cents: row?.s ?? 0,
-    });
+    const key = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+    results.push({ date: `${d.getMonth() + 1}/${d.getDate()}`, cents: map.get(key) ?? 0 });
   }
   return results;
 }
@@ -316,7 +325,7 @@ export async function weekOverWeekRevenue(): Promise<{ thisWeek: number; lastWee
   lastSunday.setMilliseconds(-1);
 
   const [thisW] = await db.select({ s: sum(order.payableCents).mapWith(Number) }).from(order)
-    .where(and(eq(order.orderStatus, "COMPLETED"), gte(order.startAt, thisMonday)));
+    .where(and(eq(order.orderStatus, "COMPLETED"), gte(order.startAt, thisMonday), lte(order.startAt, now)));
   const [lastW] = await db.select({ s: sum(order.payableCents).mapWith(Number) }).from(order)
     .where(and(eq(order.orderStatus, "COMPLETED"), gte(order.startAt, lastMonday), lte(order.startAt, lastSunday)));
 

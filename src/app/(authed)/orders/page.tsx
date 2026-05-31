@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { desc, eq, aliasedTable, sql, and, gte, lte, count } from "drizzle-orm";
+import { desc, eq, aliasedTable, sql, and, gte, lte, count, like, or } from "drizzle-orm";
 import { Plus } from "lucide-react";
 import { db } from "@/db";
 import { order, user, customer } from "@/db/schema";
@@ -13,6 +13,10 @@ import { ExportCSVButton } from "@/components/export-csv-button";
 import { exportOrdersCSV } from "@/server/actions/export";
 
 const PAGE_SIZE = 50;
+
+function escapeLike(s: string) {
+  return s.replace(/[%_\\]/g, "\\$&");
+}
 
 export default async function OrdersPage({
   searchParams,
@@ -115,47 +119,44 @@ export default async function OrdersPage({
     playerCompensationCents: order.playerCompensationCents,
   };
 
-  // Build base query with joins
-  const baseQuery = db
+
+
+  // Search condition (SQL-level LIKE, not memory filter)
+  if (q) {
+    const escaped = escapeLike(q);
+    conditions.push(
+      or(
+        like(customer.name, `%${escaped}%`),
+        like(user.name, `%${escaped}%`),
+        like(customer.memberNo, `%${escaped}%`)
+      )!
+    );
+  }
+
+  const finalWhere = conditions.length > 0 ? and(...conditions) : undefined;
+
+  const offset = (page - 1) * PAGE_SIZE;
+
+  // Count query
+  const [countResult] = await db
+    .select({ count: count() })
+    .from(order)
+    .innerJoin(user, eq(user.id, order.playerId))
+    .innerJoin(dispatcherUser, eq(dispatcherUser.id, order.dispatcherId))
+    .innerJoin(customer, eq(customer.id, order.customerId))
+    .where(finalWhere);
+  const total = countResult?.count ?? 0;
+
+  const rows = await db
     .select(selectFields)
     .from(order)
     .innerJoin(user, eq(user.id, order.playerId))
     .innerJoin(dispatcherUser, eq(dispatcherUser.id, order.dispatcherId))
     .innerJoin(customer, eq(customer.id, order.customerId))
-    .where(whereClause)
-    .orderBy(desc(order.startAt));
-
-  // Apply search filter + pagination
-  const offset = (page - 1) * PAGE_SIZE;
-
-  let rows;
-  let total: number;
-
-  if (q) {
-    // Get all matching then filter by search (drizzle MySQL LIKE on joined cols)
-    const allRows = await baseQuery;
-    const qLower = q.toLowerCase();
-    const filtered = allRows.filter(
-      (r) =>
-        r.customerName.toLowerCase().includes(qLower) ||
-        r.playerName.toLowerCase().includes(qLower) ||
-        r.customerMemberNo.toLowerCase().includes(qLower)
-    );
-    total = filtered.length;
-    rows = filtered.slice(offset, offset + PAGE_SIZE);
-  } else {
-    // Count query
-    const [countResult] = await db
-      .select({ count: count() })
-      .from(order)
-      .innerJoin(user, eq(user.id, order.playerId))
-      .innerJoin(dispatcherUser, eq(dispatcherUser.id, order.dispatcherId))
-      .innerJoin(customer, eq(customer.id, order.customerId))
-      .where(whereClause);
-    total = countResult?.count ?? 0;
-
-    rows = await baseQuery.limit(PAGE_SIZE).offset(offset);
-  }
+    .where(finalWhere)
+    .orderBy(desc(order.startAt))
+    .limit(PAGE_SIZE)
+    .offset(offset);
 
   function buildUrl(p: number) {
     const sp = new URLSearchParams();

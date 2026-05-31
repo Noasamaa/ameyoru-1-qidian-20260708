@@ -1,7 +1,7 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
-import { and, eq, sql } from "drizzle-orm";
+import { and, eq, sql, inArray } from "drizzle-orm";
 import { z } from "zod";
 import { db } from "@/db";
 import { order, customer, customerBalanceTxn, user } from "@/db/schema";
@@ -370,6 +370,7 @@ export async function adjustOrderDurationAction(
     })
     .where(eq(order.id, target.id));
 
+  logAudit({ actorId: me.id, actorName: me.name, action: "ADJUST_ORDER_DURATION", targetType: "order", targetId: target.id, detail: { extraMinutes: parsed.data.extraMinutes } });
   invalidatePages(target.id);
   return { ok: true as const };
 }
@@ -529,11 +530,12 @@ export async function settleOrderAction(input: {
 }
 
 export async function unsettleOrderAction(input: { id: string }) {
-  await requireSession({ role: ["BOSS", "STAFF"] });
+  const { user: me } = await requireSession({ role: ["BOSS", "STAFF"] });
   await db
     .update(order)
     .set({ settleStatus: "UNSETTLED", settledAt: null, paidMethod: null })
     .where(eq(order.id, input.id));
+  logAudit({ actorId: me.id, actorName: me.name, action: "UNSETTLE_ORDER", targetType: "order", targetId: input.id });
   invalidatePages(input.id);
   return { ok: true as const };
 }
@@ -547,34 +549,35 @@ export async function batchSettleAction(input: {
   if (input.ids.length > 200) return { ok: false as const, error: "单次最多批量结算200单" };
 
   const now = new Date();
-  let count = 0;
-  // 分批事务:每50条一批
-  const chunks: string[][] = [];
-  for (let i = 0; i < input.ids.length; i += 50) {
-    chunks.push(input.ids.slice(i, i + 50));
-  }
-  for (const chunk of chunks) {
-    await db.transaction(async (tx) => {
-      for (const id of chunk) {
-        const [target] = await tx
-          .select({ orderStatus: order.orderStatus, settleStatus: order.settleStatus })
-          .from(order)
-          .where(eq(order.id, id))
-          .limit(1);
-        if (!target) continue;
-        if (target.settleStatus === "SETTLED") continue;
-        if (target.orderStatus !== "COMPLETED" && target.orderStatus !== "CANCELED") continue;
-        await tx
-          .update(order)
-          .set({ settleStatus: "SETTLED", settledAt: now, paidMethod: input.paidMethod ?? null })
-          .where(eq(order.id, id));
-        count++;
-      }
-    });
+  let settled = 0;
+
+  await db.transaction(async (tx) => {
+    // 批量查询所有目标订单
+    const targets = await tx
+      .select({ id: order.id, orderStatus: order.orderStatus, settleStatus: order.settleStatus })
+      .from(order)
+      .where(inArray(order.id, input.ids));
+
+    // 筛选可结算的
+    const eligibleIds = targets
+      .filter((t) => t.settleStatus === "UNSETTLED" && (t.orderStatus === "COMPLETED" || t.orderStatus === "CANCELED"))
+      .map((t) => t.id);
+
+    if (eligibleIds.length > 0) {
+      await tx
+        .update(order)
+        .set({ settleStatus: "SETTLED", settledAt: now, paidMethod: input.paidMethod ?? null })
+        .where(inArray(order.id, eligibleIds));
+      settled = eligibleIds.length;
+    }
+  });
+
+  if (settled > 0) {
+    logAudit({ actorId: me.id, actorName: me.name, action: "BATCH_SETTLE", targetType: "order", detail: { count: settled, paidMethod: input.paidMethod } });
   }
 
   revalidatePath("/overview");
   revalidatePath("/orders");
   revalidatePath("/payouts");
-  return { ok: true as const, count };
+  return { ok: true as const, count: settled };
 }

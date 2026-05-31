@@ -1,5 +1,9 @@
 "use server";
 
+function escapeLike(s: string) {
+  return s.replace(/[%_\\]/g, "\\$&");
+}
+
 import { and, desc, eq, gte, lte, like, or, aliasedTable } from "drizzle-orm";
 import { db } from "@/db";
 import { order, user, customer } from "@/db/schema";
@@ -25,9 +29,9 @@ export async function exportOrdersCSV(opts: {
   if (opts.q) {
     conditions.push(
       or(
-        like(customer.name, `%${opts.q}%`),
-        like(user.name, `%${opts.q}%`),
-        like(customer.memberNo, `%${opts.q}%`)
+        like(customer.name, `%${escapeLike(opts.q)}%`),
+        like(user.name, `%${escapeLike(opts.q)}%`),
+        like(customer.memberNo, `%${escapeLike(opts.q)}%`)
       ) as ReturnType<typeof eq>
     );
   }
@@ -123,5 +127,5 @@ export async function exportPlayersCSV() {
     formatDateTime(r.createdAt),
   ]);
 
-  return { csv: toCSV(headers, csvRows), filename: `陪玩列表_${new Date().toLocaleDateString("zh-CN").replace(/\//g, "-")}.csv` };
+  return { ok: true as const, csv: toCSV(headers, csvRows), filename: `陪玩列表_${new Date().toLocaleDateString("zh-CN").replace(/\//g, "-")}.csv` };
 }

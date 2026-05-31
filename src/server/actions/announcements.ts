@@ -63,8 +63,9 @@ export async function upsertAnnouncementAction(input: UpsertAnnouncementInput) {
 }
 
 export async function toggleAnnouncementAction(input: { id: string; enabled: boolean }) {
-  await requireSession({ role: ["BOSS", "STAFF"] });
+  const { user: me } = await requireSession({ role: ["BOSS", "STAFF"] });
   await db.update(announcement).set({ enabled: input.enabled }).where(eq(announcement.id, input.id));
+  logAudit({ actorId: me.id, actorName: me.name, action: input.enabled ? "ENABLE_ANNOUNCEMENT" : "DISABLE_ANNOUNCEMENT", targetType: "announcement", targetId: input.id });
   invalidate();
   return { ok: true as const };
 }
