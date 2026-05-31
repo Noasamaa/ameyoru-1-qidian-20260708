@@ -88,3 +88,8 @@ export async function getActiveAnnouncements() {
     return true;
   });
 }
+
+/** 登录页用：显示所有启用的公告，不过滤时间 */
+export async function getAllEnabledAnnouncements() {
+  return db.select().from(announcement).where(eq(announcement.enabled, true)).orderBy(desc(announcement.sortOrder), desc(announcement.createdAt));
+}

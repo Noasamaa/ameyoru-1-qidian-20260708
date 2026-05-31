@@ -1,12 +1,12 @@
 import { requireSession } from "@/lib/auth-helpers";
 import { ManagerOverview } from "./manager-overview";
 import { PlayerOverview } from "./player-overview";
-import { getActiveAnnouncements } from "@/server/actions/announcements";
+import { getAllEnabledAnnouncements } from "@/server/actions/announcements";
 import { AnnouncementsBanner } from "@/components/announcements-banner";
 
 export default async function OverviewPage() {
   const { user } = await requireSession();
-  const announcements = await getActiveAnnouncements();
+  const announcements = await getAllEnabledAnnouncements();
   const bannerItems = announcements.map((a) => ({
     id: a.id,
     type: a.type,

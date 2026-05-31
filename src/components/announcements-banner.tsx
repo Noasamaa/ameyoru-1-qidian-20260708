@@ -32,14 +32,14 @@ export function AnnouncementsBanner({ items }: { items: AnnouncementItem[] }) {
           </div>
           <div className="min-w-0 flex-1">
             <div className="flex items-center gap-2">
-              <span className="font-medium text-sm">{item.title}</span>
+              <span className="font-bold text-base">{item.title}</span>
               {item.type === "ACTIVITY" && (
                 <Badge variant="outline" className="text-[10px]">
                   {item.isPermanent ? "长期有效" : item.endAt ? `截止 ${new Date(item.endAt).toLocaleDateString()}` : "活动"}
                 </Badge>
               )}
             </div>
-            {item.content && <p className="text-xs text-muted-foreground mt-0.5 line-clamp-2">{item.content}</p>}
+            {item.content && <p className="text-sm text-foreground/80 mt-1 line-clamp-3">{item.content}</p>}
           </div>
         </Card>
       ))}

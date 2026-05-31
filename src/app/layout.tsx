@@ -6,8 +6,12 @@ import { cn } from "@/lib/utils";
 import "./globals.css";
 
 export const metadata: Metadata = {
-  title: "起点电竞",
-  description: "起点电竞 · 内部管理系统",
+  title: "起点乱斗",
+  description: "起点乱斗 · 内部管理系统",
+  icons: {
+    icon: "/favicon.ico",
+    apple: "/apple-icon.png",
+  },
 };
 
 export const viewport: Viewport = {

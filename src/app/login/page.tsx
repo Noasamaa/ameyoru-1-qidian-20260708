@@ -1,18 +1,33 @@
+export const dynamic = "force-dynamic";
+import Image from "next/image";
 import { LoginForm } from "./login-form";
+import { getAllEnabledAnnouncements } from "@/server/actions/announcements";
+import { LoginAnnouncements } from "@/components/login-announcements";
 
-export default function LoginPage() {
+export default async function LoginPage() {
+  const announcements = await getAllEnabledAnnouncements();
+  const bannerItems = announcements.map((a) => ({
+    id: a.id,
+    type: a.type,
+    title: a.title,
+    content: a.content,
+    isPermanent: a.isPermanent,
+    endAt: a.endAt?.toISOString() ?? null,
+  }));
+
   return (
-    <div className="grid min-h-svh lg:grid-cols-[1.1fr_1fr]">
-      <BrandPanel />
-      <FormPanel />
-    </div>
+    <LoginAnnouncements items={bannerItems}>
+      <div className="grid min-h-svh lg:grid-cols-[1.1fr_1fr]">
+        <BrandPanel />
+        <FormPanel />
+      </div>
+    </LoginAnnouncements>
   );
 }
 
 function BrandPanel() {
   return (
     <div className="relative hidden overflow-hidden bg-gradient-to-br from-primary/8 via-background to-background lg:flex lg:flex-col lg:justify-between lg:px-14 lg:py-12">
-      {/* 装饰:浮动几何 */}
       <div
         aria-hidden
         className="pointer-events-none absolute inset-0 [background:radial-gradient(800px_circle_at_30%_20%,theme(colors.primary/12%),transparent_60%),radial-gradient(600px_circle_at_80%_80%,theme(colors.chart-2/10%),transparent_60%)]"
@@ -23,10 +38,8 @@ function BrandPanel() {
       />
 
       <div className="relative flex items-center gap-2.5">
-        <div className="flex size-9 items-center justify-center rounded-xl bg-primary text-primary-foreground text-base font-bold shadow-sm">
-          起
-        </div>
-        <span className="text-base font-semibold tracking-tight">起点电竞</span>
+        <Image src="/logo.png" alt="起点乱斗" width={36} height={36} className="rounded-xl shadow-sm" />
+        <span className="text-base font-semibold tracking-tight"><span className="font-black italic">起点</span><span className="font-black italic text-red-500">乱斗</span></span>
       </div>
 
       <div className="relative space-y-3">
@@ -45,7 +58,7 @@ function BrandPanel() {
       </div>
 
       <div className="relative text-xs text-muted-foreground">
-        © {new Date().getFullYear()} 起点电竞
+        © {new Date().getFullYear()} <span className="font-black italic">起点</span><span className="font-black italic text-red-500">乱斗</span>
       </div>
     </div>
   );
@@ -63,12 +76,9 @@ function FormPanel() {
   return (
     <div className="flex items-center justify-center bg-background p-6 sm:p-10">
       <div className="w-full max-w-sm space-y-8">
-        {/* 移动端 brand */}
         <div className="flex flex-col items-center gap-2 text-center lg:hidden">
-          <div className="flex size-10 items-center justify-center rounded-xl bg-primary text-primary-foreground text-base font-bold shadow-sm">
-            起
-          </div>
-          <span className="text-sm font-semibold tracking-tight">起点电竞</span>
+          <Image src="/logo.png" alt="起点乱斗" width={40} height={40} className="rounded-xl shadow-sm" />
+          <span className="text-sm font-semibold tracking-tight"><span className="font-black italic">起点</span><span className="font-black italic text-red-500">乱斗</span></span>
         </div>
 
         <div className="space-y-2 text-center lg:text-left">
