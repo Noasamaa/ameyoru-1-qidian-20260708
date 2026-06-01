@@ -57,6 +57,7 @@ export const user = mysqlTable("user", {
   wechatQrPath: varchar("wechat_qr_path", { length: 500 }),
   alipayQrPath: varchar("alipay_qr_path", { length: 500 }),
   qrSecurityCodeHash: varchar("qr_security_code_hash", { length: 255 }),
+  depositPaid: boolean("deposit_paid").notNull().default(false),
 });
 
 export const session = mysqlTable("session", {

@@ -46,6 +46,7 @@ import {
   createPlayerAction,
   resetPlayerQrSecurityCodeAction,
   resetUserPasswordAction,
+  toggleDepositAction,
   toggleUserActiveAction,
   updatePlayerProfileAction,
 } from "@/server/actions/users";
@@ -62,6 +63,7 @@ interface Player {
   wechatQrPath: string | null;
   alipayQrPath: string | null;
   hasQrSecurityCode: boolean;
+  depositPaid: boolean;
   createdAt: string;
 }
 
@@ -150,6 +152,18 @@ export function PlayersClient({
     });
   }
 
+  function handleDeposit(p: Player) {
+    startTransition(async () => {
+      const res = await toggleDepositAction({ id: p.id, depositPaid: !p.depositPaid });
+      if (!res.ok) {
+        toast.error("操作失败");
+        return;
+      }
+      toast.success(p.depositPaid ? `已取消 ${p.displayName} 的押金标记` : `已标记 ${p.displayName} 已缴押金`);
+      router.refresh();
+    });
+  }
+
   return (
     <>
       <div className="mb-4 space-y-3">
@@ -207,6 +221,7 @@ export function PlayersClient({
             onResetSecurityCode={setSecurityCodePlayer}
             onReset={handleReset}
             onToggle={handleToggle}
+            onDeposit={handleDeposit}
           />
           <PlayerPriceSection
             title="女陪"
@@ -218,6 +233,7 @@ export function PlayersClient({
             onResetSecurityCode={setSecurityCodePlayer}
             onReset={handleReset}
             onToggle={handleToggle}
+            onDeposit={handleDeposit}
           />
           {groupedPlayers.UNSET.length > 0 && (
             <PlayerPriceSection
@@ -230,6 +246,7 @@ export function PlayersClient({
               onResetSecurityCode={setSecurityCodePlayer}
               onReset={handleReset}
               onToggle={handleToggle}
+              onDeposit={handleDeposit}
             />
           )}
         </div>
@@ -271,6 +288,7 @@ function PlayerPriceSection({
   onResetSecurityCode,
   onReset,
   onToggle,
+  onDeposit,
 }: {
   title: string;
   players: Player[];
@@ -281,6 +299,7 @@ function PlayerPriceSection({
   onResetSecurityCode: (player: Player) => void;
   onReset: (player: Player) => void;
   onToggle: (player: Player) => void;
+  onDeposit: (player: Player) => void;
 }) {
   const bucketSet = new Set(buckets);
   const otherPlayers = players.filter(
@@ -308,6 +327,7 @@ function PlayerPriceSection({
               onResetSecurityCode={onResetSecurityCode}
               onReset={onReset}
               onToggle={onToggle}
+              onDeposit={onDeposit}
             />
           );
         })}
@@ -321,6 +341,7 @@ function PlayerPriceSection({
             onResetSecurityCode={onResetSecurityCode}
             onReset={onReset}
             onToggle={onToggle}
+            onDeposit={onDeposit}
           />
         )}
       </div>
@@ -338,6 +359,7 @@ function PriceBucket({
   onResetSecurityCode,
   onReset,
   onToggle,
+  onDeposit,
 }: {
   priceBucket?: number;
   label?: string;
@@ -348,6 +370,7 @@ function PriceBucket({
   onResetSecurityCode: (player: Player) => void;
   onReset: (player: Player) => void;
   onToggle: (player: Player) => void;
+  onDeposit: (player: Player) => void;
 }) {
   return (
     <Card className="overflow-hidden p-0">
@@ -375,6 +398,7 @@ function PriceBucket({
               onResetSecurityCode={onResetSecurityCode}
               onReset={onReset}
               onToggle={onToggle}
+              onDeposit={onDeposit}
             />
           ))}
         </div>
@@ -391,6 +415,7 @@ function PlayerRow({
   onResetSecurityCode,
   onReset,
   onToggle,
+  onDeposit,
 }: {
   player: Player;
   canManage: boolean;
@@ -399,6 +424,7 @@ function PlayerRow({
   onResetSecurityCode: (player: Player) => void;
   onReset: (player: Player) => void;
   onToggle: (player: Player) => void;
+  onDeposit: (player: Player) => void;
 }) {
   const hasQr = !!(player.wechatQrPath || player.alipayQrPath);
 
@@ -412,6 +438,9 @@ function PlayerRow({
       <div className="min-w-0 flex-1">
         <div className="flex flex-wrap items-center gap-1.5">
           <span className="text-sm font-medium">{player.displayName}</span>
+          {player.depositPaid && (
+            <Badge variant="default" className="text-[10px] bg-emerald-500">已缴押金</Badge>
+          )}
           {player.playerGender && (
             <Badge variant="outline" className="text-[10px]">
               {genderLabel[player.playerGender]}
@@ -435,6 +464,11 @@ function PlayerRow({
           {!player.hasQrSecurityCode && (
             <Badge variant="warning" className="text-[10px]">
               缺安全码
+            </Badge>
+          )}
+          {player.depositPaid && (
+            <Badge variant="outline" className="text-[10px] border-green-500 text-green-600">
+              已缴押金
             </Badge>
           )}
         </div>
@@ -480,6 +514,13 @@ function PlayerRow({
                 <Power /> 激活账号
               </DropdownMenuItem>
             )}
+            <DropdownMenuSeparator />
+            <DropdownMenuItem
+              onClick={() => onDeposit(player)}
+              disabled={pending}
+            >
+              {player.depositPaid ? "取消押金标记" : "标记已缴押金"}
+            </DropdownMenuItem>
           </DropdownMenuContent>
         </DropdownMenu>
       )}

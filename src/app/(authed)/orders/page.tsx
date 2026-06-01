@@ -115,6 +115,7 @@ export default async function OrdersPage({
     cancelFault: order.cancelFault,
     cancelNote: order.cancelNote,
     playerCompensationCents: order.playerCompensationCents,
+    depositPaid: user.depositPaid,
   };
 
 

@@ -3,9 +3,16 @@
 import { useRef, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
-import { Loader2, QrCode, Trash2, Upload } from "lucide-react";
+import { Loader2, QrCode, Trash2, Upload, ZoomIn } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 import {
   deleteQrCodeAction,
   uploadQrCodeAction,
@@ -31,7 +38,7 @@ export function QrUploadSection({
           当前账号还没有收款码安全码,请联系店长重新生成开户链接或重置安全码
         </div>
       )}
-      <div className="grid gap-4 sm:grid-cols-2">
+      <div className="space-y-4 max-w-md">
         <QrSlot
           type="WECHAT"
           label="微信收款码"
@@ -66,6 +73,7 @@ function QrSlot({
   const [securityCode, setSecurityCode] = useState("");
   // 上传后用一个时间戳强制刷新 <img src>(同 URL 浏览器会缓存)
   const [imgVersion, setImgVersion] = useState(0);
+  const [zoomOpen, setZoomOpen] = useState(false);
 
   function handleFileSelect(e: React.ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0];
@@ -124,14 +132,39 @@ function QrSlot({
 
       {path ? (
         // 显示当前码
-        <div className="relative aspect-square overflow-hidden rounded-lg border bg-muted/30">
-          {/* eslint-disable-next-line @next/next/no-img-element */}
-          <img
-            src={`/api/uploads/${path}?v=${imgVersion}`}
-            alt={label}
-            className="size-full object-contain"
-          />
-        </div>
+        <>
+          <button
+            type="button"
+            onClick={() => setZoomOpen(true)}
+            className="relative w-full overflow-hidden rounded-lg border bg-muted/30 cursor-zoom-in group"
+          >
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img
+              src={`/api/uploads/${path}?v=${imgVersion}`}
+              alt={label}
+              className="w-full object-contain"
+            />
+            <div className="absolute inset-0 flex items-center justify-center bg-black/0 group-hover:bg-black/10 transition-colors">
+              <ZoomIn className="size-6 text-white opacity-0 group-hover:opacity-80 transition-opacity" />
+            </div>
+          </button>
+          <p className="text-xs text-muted-foreground text-center">点击二维码可放大</p>
+
+          <Dialog open={zoomOpen} onOpenChange={setZoomOpen}>
+            <DialogContent className="max-w-lg sm:max-w-md p-2">
+              <DialogHeader>
+                <DialogTitle>{label}</DialogTitle>
+                <DialogDescription>用手机扫码向陪玩打款</DialogDescription>
+              </DialogHeader>
+              {/* eslint-disable-next-line @next/next/no-img-element */}
+              <img
+                src={`/api/uploads/${path}?v=${imgVersion}`}
+                alt={label}
+                className="w-full object-contain rounded-lg"
+              />
+            </DialogContent>
+          </Dialog>
+        </>
       ) : (
         // 未上传占位
         <button

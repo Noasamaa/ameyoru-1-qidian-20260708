@@ -504,3 +504,11 @@ export async function completePlayerInviteAction(
 
   return { ok: true };
 }
+
+export async function toggleDepositAction(input: { id: string; depositPaid: boolean }) {
+  const { user: me } = await requireSession({ role: ["BOSS", "STAFF"] });
+  await db.update(user).set({ depositPaid: input.depositPaid }).where(eq(user.id, input.id));
+  logAudit({ actorId: me.id, actorName: me.name, action: input.depositPaid ? "MARK_DEPOSIT_PAID" : "MARK_DEPOSIT_UNPAID", targetType: "user", targetId: input.id });
+  revalidatePath("/players");
+  return { ok: true as const };
+}

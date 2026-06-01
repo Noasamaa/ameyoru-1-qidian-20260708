@@ -35,6 +35,7 @@ export default async function PlayersPage({
       wechatQrPath: user.wechatQrPath,
       alipayQrPath: user.alipayQrPath,
       qrSecurityCodeHash: user.qrSecurityCodeHash,
+      depositPaid: user.depositPaid,
       createdAt: user.createdAt,
     })
     .from(user)
@@ -60,6 +61,7 @@ export default async function PlayersPage({
           wechatQrPath: p.wechatQrPath,
           alipayQrPath: p.alipayQrPath,
           hasQrSecurityCode: !!p.qrSecurityCodeHash,
+          depositPaid: p.depositPaid,
           createdAt: p.createdAt.toISOString(),
         }))}
       />

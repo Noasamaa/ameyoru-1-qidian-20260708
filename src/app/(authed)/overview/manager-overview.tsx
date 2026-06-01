@@ -39,8 +39,8 @@ export async function ManagerOverview({ userName }: { userName: string }) {
       <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
         <KpiCard
           label="今日完成"
-          value={today.orderCount}
-          hint={`${formatYuan(today.payableCents)} 流水`}
+          value={`${today.orderCount} 单`}
+          hint={`累计 ${Math.floor((today.durationMin ?? 0) / 60)}h${(today.durationMin ?? 0) % 60 > 0 ? `${(today.durationMin ?? 0) % 60}m` : ""} · ${formatYuan(today.payableCents)}`}
         />
         <KpiCard
           label="本周流水"

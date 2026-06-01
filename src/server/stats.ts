@@ -110,6 +110,7 @@ export async function shopSummary(range: RangeKey) {
   const [completed] = await db
     .select({
       orderCount: count(),
+      durationMin: sum(order.durationMin).mapWith(Number),
       originalCents: sum(order.originalCents).mapWith(Number),
       discountCents: sum(order.discountCents).mapWith(Number),
       payableCents: sum(order.payableCents).mapWith(Number),
@@ -150,6 +151,7 @@ export async function shopSummary(range: RangeKey) {
   return {
     range,
     orderCount: completed?.orderCount ?? 0,
+    durationMin: completed?.durationMin ?? 0,
     originalCents: completed?.originalCents ?? 0,
     discountCents: completed?.discountCents ?? 0,
     payableCents: payable,

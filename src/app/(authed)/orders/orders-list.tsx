@@ -99,6 +99,7 @@ interface OrderRow {
   cancelFault: CancelFault | null;
   cancelNote: string | null;
   note: string | null;
+  depositPaid: boolean;
 }
 
 
@@ -232,6 +233,9 @@ export function OrdersList({
                         {canManage && (
                           <>
                             <span>{o.playerName}</span>
+                            {o.depositPaid && (
+                              <span className="inline-block size-2 rounded-full bg-green-500 shrink-0" title="已缴押金" />
+                            )}
                             <span className="text-muted-foreground">·</span>
                           </>
                         )}
