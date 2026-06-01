@@ -78,7 +78,6 @@ export async function ManagerOverview({ userName }: { userName: string }) {
             const max = Math.max(...daily.map(d => d.cents), 1);
             const totalCents = daily.reduce((s, d) => s + d.cents, 0);
             const avgCents = Math.round(totalCents / (daily.length || 1));
-            const avgPct = max > 0 ? Math.round((avgCents / max) * 100) : 0;
             const weekdays = ["周日","周一","周二","周三","周四","周五","周六"];
             // figure out day-of-week for each date
             const now = new Date();

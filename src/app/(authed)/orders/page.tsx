@@ -76,7 +76,6 @@ export default async function OrdersPage({
 
   // Search (needs join context — filter after join via subquery approach)
   // We'll use the full query with search applied via customer name / player name
-  const whereClause = conditions.length > 0 ? and(...conditions) : undefined;
 
   // For counting total (with search)
   const selectFields = {

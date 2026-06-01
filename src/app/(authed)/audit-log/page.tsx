@@ -22,6 +22,17 @@ const ACTION_LABEL: Record<string, string> = {
   UPDATE_ANNOUNCEMENT: "修改公告",
   DELETE_ANNOUNCEMENT: "删除公告",
   TOGGLE_ANNOUNCEMENT: "切换公告",
+  CREATE_PLAYER: "创建陪玩",
+  ENABLE_USER: "启用用户",
+  DISABLE_USER: "停用用户",
+  BATCH_SETTLE: "批量结算",
+  ADJUST_ORDER_DURATION: "调整时长",
+  MARK_DEPOSIT_PAID: "标记已缴押金",
+  MARK_DEPOSIT_UNPAID: "取消押金标记",
+  CREATE_PLAYER_INVITE: "创建邀请链接",
+  DELETE_PLAYER_INVITE: "删除邀请链接",
+  ENABLE_ANNOUNCEMENT: "启用公告",
+  DISABLE_ANNOUNCEMENT: "禁用公告",
 };
 
 const ACTION_COLOR: Record<string, string> = {
@@ -30,6 +41,17 @@ const ACTION_COLOR: Record<string, string> = {
   SETTLE_ORDER: "default",
   CANCEL_ORDER: "destructive",
   UNSETTLE_ORDER: "outline",
+  CREATE_PLAYER: "创建陪玩",
+  ENABLE_USER: "启用用户",
+  DISABLE_USER: "停用用户",
+  BATCH_SETTLE: "批量结算",
+  ADJUST_ORDER_DURATION: "调整时长",
+  MARK_DEPOSIT_PAID: "标记已缴押金",
+  MARK_DEPOSIT_UNPAID: "取消押金标记",
+  CREATE_PLAYER_INVITE: "创建邀请链接",
+  DELETE_PLAYER_INVITE: "删除邀请链接",
+  ENABLE_ANNOUNCEMENT: "启用公告",
+  DISABLE_ANNOUNCEMENT: "禁用公告",
 };
 
 export default async function AuditLogPage() {

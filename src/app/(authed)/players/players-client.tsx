@@ -466,11 +466,7 @@ function PlayerRow({
               缺安全码
             </Badge>
           )}
-          {player.depositPaid && (
-            <Badge variant="outline" className="text-[10px] border-green-500 text-green-600">
-              已缴押金
-            </Badge>
-          )}
+          
         </div>
         <div className="text-xs text-muted-foreground">
           @{player.username}
