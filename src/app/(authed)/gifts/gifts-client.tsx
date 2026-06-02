@@ -24,17 +24,25 @@ import { formatYuan, formatDateTime } from "@/lib/format";
 import { cn } from "@/lib/utils";
 import { GIFT_TIER_CENTS } from "@/db/schema";
 import { GIFT_TIER_LABELS, DEFAULT_GIFT_FEE_RATE_BP } from "@/lib/constants";
+import { PlayerCombobox, type PlayerOption } from "@/components/player-combobox";
 import {
   upsertGiftRecordAction,
   deleteGiftRecordAction,
   type UpsertGiftRecordInput,
 } from "@/server/actions/gifts";
 
-interface PlayerOpt {
-  id: string;
-  name: string;
-  username: string | null;
-  active: boolean;
+interface Props {
+  players: PlayerOption[];
+  records: Record[];
+  total: number;
+  page: number;
+  pageSize: number;
+  filter: {
+    playerId: string;
+    tier: string;
+    startAt: string;
+    endAt: string;
+  };
 }
 
 interface Record {
@@ -52,20 +60,6 @@ interface Record {
   operatorId: string;
   operatorName: string;
   createdAt: string;
-}
-
-interface Props {
-  players: PlayerOpt[];
-  records: Record[];
-  total: number;
-  page: number;
-  pageSize: number;
-  filter: {
-    playerId: string;
-    tier: string;
-    startAt: string;
-    endAt: string;
-  };
 }
 
 const EMPTY_FORM: UpsertGiftRecordInput = {
@@ -197,19 +191,13 @@ export function GiftsAdminClient({
       <Card className="mb-4 p-4 grid grid-cols-1 gap-3 sm:grid-cols-4">
         <div>
           <Label className="text-xs">陪玩</Label>
-          <select
-            className="mt-1 w-full rounded border px-3 py-2 text-sm"
+          <PlayerCombobox
+            className="mt-1"
+            players={players}
             value={filter.playerId}
-            onChange={(e) => setFilterParam("playerId", e.target.value)}
-          >
-            <option value="">全部</option>
-            {players.map((p) => (
-              <option key={p.id} value={p.id}>
-                {p.name}
-                {!p.active ? "(已停用)" : ""}
-              </option>
-            ))}
-          </select>
+            onChange={(id) => setFilterParam("playerId", id)}
+            allowAll
+          />
         </div>
         <div>
           <Label className="text-xs">档位</Label>
@@ -323,19 +311,13 @@ export function GiftsAdminClient({
           <div className="space-y-4">
             <div>
               <Label>陪玩 *</Label>
-              <select
-                className="mt-1 w-full rounded border px-3 py-2 text-sm"
+              <PlayerCombobox
+                className="mt-1"
+                players={players}
                 value={form.playerId}
-                onChange={(e) => setForm({ ...form, playerId: e.target.value })}
-              >
-                <option value="">请选择陪玩…</option>
-                {players.map((p) => (
-                  <option key={p.id} value={p.id}>
-                    {p.name}
-                    {!p.active ? "(已停用)" : ""}
-                  </option>
-                ))}
-              </select>
+                onChange={(id) => setForm({ ...form, playerId: id })}
+                placeholder="搜索并选择陪玩…"
+              />
             </div>
 
             <div>
