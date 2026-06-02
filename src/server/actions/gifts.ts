@@ -29,6 +29,7 @@ export type UpsertGiftRecordInput = z.input<typeof upsertSchema>;
 const listFilterSchema = z.object({
   playerId: z.string().optional(),
   giftTierCents: z.number().int().optional(),
+  settleStatus: z.enum(["UNSETTLED", "SETTLED"]).optional(),
   startAt: z.string().optional().nullable(),
   endAt: z.string().optional().nullable(),
   page: z.number().int().min(1).default(1),
@@ -37,10 +38,6 @@ const listFilterSchema = z.object({
 
 export type ListGiftRecordFilter = z.input<typeof listFilterSchema>;
 
-/**
- * 按当前抽成比例(basis points)计算平台抽成与陪玩到手。
- * 用整数运算避免浮点误差。
- */
 function computeSplit(totalCents: number, feeRateBp: number) {
   const platformFee = Math.round((totalCents * feeRateBp) / 10000);
   const playerEarn = totalCents - platformFee;
@@ -50,18 +47,33 @@ function computeSplit(totalCents: number, feeRateBp: number) {
 function invalidate() {
   revalidatePath("/gifts");
   revalidatePath("/my-gifts");
+  revalidatePath("/leaderboard");
   revalidatePath("/(authed)", "layout");
 }
 
+/**
+ * 新增/编辑礼物报单。
+ * 权限:
+ *   - BOSS/STAFF: 可为任意陪玩创建,可改任意条记录
+ *   - PLAYER: 只能为自己创建,只能改自己提交的且 UNSETTLED 的记录
+ */
 export async function upsertGiftRecordAction(input: UpsertGiftRecordInput) {
-  const { user: me } = await requireSession({ role: ["BOSS", "STAFF"] });
+  const { user: me } = await requireSession();
+  const isManager = me.role === "BOSS" || me.role === "STAFF";
+  if (!isManager && me.role !== "PLAYER") {
+    return { ok: false as const, error: "无权限" };
+  }
+
   const parsed = upsertSchema.safeParse(input);
   if (!parsed.success) {
     return { ok: false as const, error: parsed.error.errors[0]?.message ?? "参数错误" };
   }
   const d = parsed.data;
 
-  // 校验陪玩存在且角色为 PLAYER
+  if (me.role === "PLAYER" && d.playerId !== me.id) {
+    return { ok: false as const, error: "陪玩只能给自己报单" };
+  }
+
   const [player] = await db
     .select({ id: user.id, role: user.role, active: user.active, name: user.name })
     .from(user)
@@ -79,13 +91,27 @@ export async function upsertGiftRecordAction(input: UpsertGiftRecordInput) {
 
   if (d.id) {
     const [existing] = await db
-      .select({ id: giftRecord.id, playerId: giftRecord.playerId, feeRateBp: giftRecord.feeRateBp })
+      .select({
+        id: giftRecord.id,
+        playerId: giftRecord.playerId,
+        feeRateBp: giftRecord.feeRateBp,
+        settleStatus: giftRecord.settleStatus,
+        submitterId: giftRecord.submitterId,
+      })
       .from(giftRecord)
       .where(eq(giftRecord.id, d.id))
       .limit(1);
     if (!existing) return { ok: false as const, error: "记录不存在" };
 
-    // 编辑时保留原快照抽成比例,只更新业务字段
+    if (me.role === "PLAYER") {
+      if (existing.submitterId !== me.id) {
+        return { ok: false as const, error: "只能编辑自己提交的报单" };
+      }
+      if (existing.settleStatus === "SETTLED") {
+        return { ok: false as const, error: "已支付的报单不能修改,请联系管理员" };
+      }
+    }
+
     const { platformFee: pf2, playerEarn: pe2 } = computeSplit(totalCents, existing.feeRateBp);
     await db
       .update(giftRecord)
@@ -102,7 +128,6 @@ export async function upsertGiftRecordAction(input: UpsertGiftRecordInput) {
       })
       .where(eq(giftRecord.id, d.id));
 
-    // 如果改了归属陪玩,把新陪玩标记为未读
     if (existing.playerId !== d.playerId) {
       await db
         .update(user)
@@ -137,8 +162,9 @@ export async function upsertGiftRecordAction(input: UpsertGiftRecordInput) {
       senderNickname: d.senderNickname,
       note: d.note?.trim() || null,
       operatorId: me.id,
+      submitterId: me.id,
+      settleStatus: "UNSETTLED",
     });
-    // 新增记录后标记陪玩为未读,触发红点
     await db
       .update(user)
       .set({ lastGiftSeenAt: null })
@@ -147,7 +173,7 @@ export async function upsertGiftRecordAction(input: UpsertGiftRecordInput) {
     logAudit({
       actorId: me.id,
       actorName: me.name,
-      action: "CREATE_GIFT_RECORD",
+      action: me.role === "PLAYER" ? "CREATE_GIFT_REPORT" : "CREATE_GIFT_RECORD",
       targetType: "gift_record",
       targetId: id,
       detail: {
@@ -164,7 +190,12 @@ export async function upsertGiftRecordAction(input: UpsertGiftRecordInput) {
 }
 
 export async function deleteGiftRecordAction(input: { id: string }) {
-  const { user: me } = await requireSession({ role: ["BOSS", "STAFF"] });
+  const { user: me } = await requireSession();
+  const isManager = me.role === "BOSS" || me.role === "STAFF";
+  if (!isManager && me.role !== "PLAYER") {
+    return { ok: false as const, error: "无权限" };
+  }
+
   const [existing] = await db
     .select({
       id: giftRecord.id,
@@ -172,11 +203,22 @@ export async function deleteGiftRecordAction(input: { id: string }) {
       giftTierCents: giftRecord.giftTierCents,
       quantity: giftRecord.quantity,
       senderNickname: giftRecord.senderNickname,
+      settleStatus: giftRecord.settleStatus,
+      submitterId: giftRecord.submitterId,
     })
     .from(giftRecord)
     .where(eq(giftRecord.id, input.id))
     .limit(1);
   if (!existing) return { ok: false as const, error: "记录不存在" };
+
+  if (me.role === "PLAYER") {
+    if (existing.submitterId !== me.id) {
+      return { ok: false as const, error: "只能删除自己提交的报单" };
+    }
+    if (existing.settleStatus === "SETTLED") {
+      return { ok: false as const, error: "已支付的报单不能删除" };
+    }
+  }
 
   await db.delete(giftRecord).where(eq(giftRecord.id, input.id));
   logAudit({
@@ -195,7 +237,81 @@ export async function deleteGiftRecordAction(input: { id: string }) {
   return { ok: true as const };
 }
 
-/** 后台:分页列表 */
+/** 后台:标记礼物报单为已支付 */
+export async function settleGiftAction(input: {
+  id: string;
+  paidMethod?: "WECHAT" | "ALIPAY";
+}) {
+  const { user: me } = await requireSession({ role: ["BOSS", "STAFF"] });
+  const [target] = await db
+    .select({
+      id: giftRecord.id,
+      settleStatus: giftRecord.settleStatus,
+      playerId: giftRecord.playerId,
+      playerEarnCents: giftRecord.playerEarnCents,
+    })
+    .from(giftRecord)
+    .where(eq(giftRecord.id, input.id))
+    .limit(1);
+  if (!target) return { ok: false as const, error: "记录不存在" };
+  if (target.settleStatus === "SETTLED") {
+    return { ok: false as const, error: "已支付,请勿重复操作" };
+  }
+
+  await db
+    .update(giftRecord)
+    .set({
+      settleStatus: "SETTLED",
+      settledAt: new Date(),
+      paidMethod: input.paidMethod ?? null,
+      updatedAt: new Date(),
+    })
+    .where(eq(giftRecord.id, input.id));
+
+  logAudit({
+    actorId: me.id,
+    actorName: me.name,
+    action: "SETTLE_GIFT",
+    targetType: "gift_record",
+    targetId: input.id,
+    detail: { amount: target.playerEarnCents, paidMethod: input.paidMethod },
+  });
+
+  invalidate();
+  return { ok: true as const };
+}
+
+export async function unsettleGiftAction(input: { id: string }) {
+  const { user: me } = await requireSession({ role: ["BOSS", "STAFF"] });
+  const [target] = await db
+    .select({ id: giftRecord.id, settleStatus: giftRecord.settleStatus })
+    .from(giftRecord)
+    .where(eq(giftRecord.id, input.id))
+    .limit(1);
+  if (!target) return { ok: false as const, error: "记录不存在" };
+  if (target.settleStatus !== "SETTLED") {
+    return { ok: false as const, error: "该报单未支付,无需撤销" };
+  }
+  await db
+    .update(giftRecord)
+    .set({
+      settleStatus: "UNSETTLED",
+      settledAt: null,
+      paidMethod: null,
+      updatedAt: new Date(),
+    })
+    .where(eq(giftRecord.id, input.id));
+  logAudit({
+    actorId: me.id,
+    actorName: me.name,
+    action: "UNSETTLE_GIFT",
+    targetType: "gift_record",
+    targetId: input.id,
+  });
+  invalidate();
+  return { ok: true as const };
+}
+
 export async function listGiftRecords(filter: ListGiftRecordFilter) {
   await requireSession({ role: ["BOSS", "STAFF"] });
   const f = listFilterSchema.parse(filter);
@@ -203,18 +319,21 @@ export async function listGiftRecords(filter: ListGiftRecordFilter) {
   const conds = [];
   if (f.playerId) conds.push(eq(giftRecord.playerId, f.playerId));
   if (f.giftTierCents) conds.push(eq(giftRecord.giftTierCents, f.giftTierCents));
+  if (f.settleStatus) conds.push(eq(giftRecord.settleStatus, f.settleStatus));
   if (f.startAt) conds.push(gte(giftRecord.createdAt, new Date(f.startAt)));
   if (f.endAt) conds.push(lte(giftRecord.createdAt, new Date(f.endAt)));
   const where = conds.length > 0 ? and(...conds) : undefined;
 
   const offset = (f.page - 1) * f.pageSize;
 
-  const [rows, totalRow] = await Promise.all([
+  const [rows, totalRow, pendingCountRow] = await Promise.all([
     db
       .select({
         id: giftRecord.id,
         playerId: giftRecord.playerId,
         playerName: user.name,
+        playerWechatQrPath: user.wechatQrPath,
+        playerAlipayQrPath: user.alipayQrPath,
         giftTierCents: giftRecord.giftTierCents,
         quantity: giftRecord.quantity,
         totalCents: giftRecord.totalCents,
@@ -224,6 +343,10 @@ export async function listGiftRecords(filter: ListGiftRecordFilter) {
         senderNickname: giftRecord.senderNickname,
         note: giftRecord.note,
         operatorId: giftRecord.operatorId,
+        submitterId: giftRecord.submitterId,
+        settleStatus: giftRecord.settleStatus,
+        settledAt: giftRecord.settledAt,
+        paidMethod: giftRecord.paidMethod,
         createdAt: giftRecord.createdAt,
       })
       .from(giftRecord)
@@ -236,31 +359,37 @@ export async function listGiftRecords(filter: ListGiftRecordFilter) {
       .select({ count: sql<number>`count(*)`.mapWith(Number) })
       .from(giftRecord)
       .where(where),
+    db
+      .select({ count: sql<number>`count(*)`.mapWith(Number) })
+      .from(giftRecord)
+      .where(eq(giftRecord.settleStatus, "UNSETTLED")),
   ]);
 
-  // 一次性查所有 operator 的 name(避免 N+1)
-  const operatorIds = Array.from(new Set(rows.map((r) => r.operatorId)));
+  const idsToLookup = Array.from(
+    new Set(rows.flatMap((r) => [r.operatorId, r.submitterId]))
+  );
   const operators =
-    operatorIds.length > 0
+    idsToLookup.length > 0
       ? await db
           .select({ id: user.id, name: user.name })
           .from(user)
-          .where(inArray(user.id, operatorIds))
+          .where(inArray(user.id, idsToLookup))
       : [];
-  const operatorMap = new Map(operators.map((o) => [o.id, o.name]));
+  const nameMap = new Map(operators.map((o) => [o.id, o.name]));
 
   return {
     rows: rows.map((r) => ({
       ...r,
-      operatorName: operatorMap.get(r.operatorId) ?? "(已删除)",
+      operatorName: nameMap.get(r.operatorId) ?? "(已删除)",
+      submitterName: nameMap.get(r.submitterId) ?? "(已删除)",
     })),
     total: totalRow[0]?.count ?? 0,
+    pendingCount: pendingCountRow[0]?.count ?? 0,
     page: f.page,
     pageSize: f.pageSize,
   };
 }
 
-/** 后台筛选下拉:陪玩列表(精简字段) */
 export async function listPlayersForGift() {
   await requireSession({ role: ["BOSS", "STAFF"] });
   return db
@@ -277,7 +406,6 @@ export async function listPlayersForGift() {
 
 /* ----------------------------- 陪玩端 ----------------------------- */
 
-/** 陪玩自己的礼物列表(全量,前端做汇总;一般不会很多条) */
 export async function getMyGiftRecords() {
   const { user: me } = await requireSession({ role: "PLAYER" });
   const rows = await db
@@ -290,6 +418,10 @@ export async function getMyGiftRecords() {
       playerEarnCents: giftRecord.playerEarnCents,
       senderNickname: giftRecord.senderNickname,
       note: giftRecord.note,
+      settleStatus: giftRecord.settleStatus,
+      settledAt: giftRecord.settledAt,
+      paidMethod: giftRecord.paidMethod,
+      submitterId: giftRecord.submitterId,
       createdAt: giftRecord.createdAt,
     })
     .from(giftRecord)
@@ -299,7 +431,7 @@ export async function getMyGiftRecords() {
   return rows;
 }
 
-/** 陪玩:未读礼物数量(red dot) */
+/** 陪玩:未读数(只算 SETTLED) */
 export async function getMyUnreadGiftCount() {
   const { user: me } = await requireSession();
   if (me.role !== "PLAYER") return { count: 0, since: null as string | null };
@@ -311,20 +443,21 @@ export async function getMyUnreadGiftCount() {
     .limit(1);
   const since = u?.lastGiftSeenAt ?? null;
 
-  const where = since
-    ? and(eq(giftRecord.playerId, me.id), gte(giftRecord.createdAt, since))
-    : eq(giftRecord.playerId, me.id);
+  const baseConds = [
+    eq(giftRecord.playerId, me.id),
+    eq(giftRecord.settleStatus, "SETTLED"),
+  ];
+  if (since) baseConds.push(gte(giftRecord.createdAt, since));
   const [row] = await db
     .select({ count: sql<number>`count(*)`.mapWith(Number) })
     .from(giftRecord)
-    .where(where);
+    .where(and(...baseConds));
   return {
     count: row?.count ?? 0,
     since: since ? since.toISOString() : null,
   };
 }
 
-/** 陪玩:取未读的具体记录(用于弹窗展示),并标记为已读 */
 export async function fetchAndMarkUnreadGifts() {
   const { user: me } = await requireSession({ role: "PLAYER" });
   const [u] = await db
@@ -334,9 +467,11 @@ export async function fetchAndMarkUnreadGifts() {
     .limit(1);
   const since = u?.lastGiftSeenAt ?? null;
 
-  const where = since
-    ? and(eq(giftRecord.playerId, me.id), gte(giftRecord.createdAt, since))
-    : eq(giftRecord.playerId, me.id);
+  const baseConds = [
+    eq(giftRecord.playerId, me.id),
+    eq(giftRecord.settleStatus, "SETTLED"),
+  ];
+  if (since) baseConds.push(gte(giftRecord.createdAt, since));
   const rows = await db
     .select({
       id: giftRecord.id,
@@ -349,11 +484,10 @@ export async function fetchAndMarkUnreadGifts() {
       createdAt: giftRecord.createdAt,
     })
     .from(giftRecord)
-    .where(where)
+    .where(and(...baseConds))
     .orderBy(desc(giftRecord.createdAt))
     .limit(20);
 
-  // 标记已读:把 lastGiftSeenAt 推到当前最新一条记录之后(用 now 即可)
   await db
     .update(user)
     .set({ lastGiftSeenAt: new Date() })
@@ -363,4 +497,87 @@ export async function fetchAndMarkUnreadGifts() {
     ...r,
     createdAt: r.createdAt.toISOString(),
   }));
+}
+
+/* ----------------------------- 排行榜 ----------------------------- */
+
+const rangeSchema = z.enum(["today", "week", "month", "all"]).default("all");
+
+function rangeStart(range: z.infer<typeof rangeSchema>): Date | null {
+  if (range === "all") return null;
+  const now = new Date();
+  if (range === "today") {
+    const d = new Date(now);
+    d.setHours(0, 0, 0, 0);
+    return d;
+  }
+  if (range === "week") {
+    const d = new Date(now);
+    d.setDate(d.getDate() - 7);
+    return d;
+  }
+  if (range === "month") {
+    const d = new Date(now);
+    d.setMonth(d.getMonth() - 1);
+    return d;
+  }
+  return null;
+}
+
+/**
+ * 礼物打赏排行榜:只统计已支付的记录,展示"谁打赏谁"。
+ */
+export async function giftLeaderboard(range: "today" | "week" | "month" | "all" = "all") {
+  await requireSession();
+  const r = rangeSchema.parse(range);
+  const since = rangeStart(r);
+
+  const baseConds = [eq(giftRecord.settleStatus, "SETTLED")];
+  if (since) baseConds.push(gte(giftRecord.createdAt, since));
+  const where = and(...baseConds);
+
+  const senderRows = await db
+    .select({
+      senderNickname: giftRecord.senderNickname,
+      totalCents: sql<number>`SUM(${giftRecord.totalCents})`.mapWith(Number),
+      giftCount: sql<number>`COUNT(*)`.mapWith(Number),
+      quantitySum: sql<number>`SUM(${giftRecord.quantity})`.mapWith(Number),
+    })
+    .from(giftRecord)
+    .where(where)
+    .groupBy(giftRecord.senderNickname)
+    .orderBy(sql`SUM(${giftRecord.totalCents}) DESC`)
+    .limit(50);
+
+  const playerRows = await db
+    .select({
+      playerId: giftRecord.playerId,
+      playerName: user.name,
+      totalCents: sql<number>`SUM(${giftRecord.totalCents})`.mapWith(Number),
+      earnCents: sql<number>`SUM(${giftRecord.playerEarnCents})`.mapWith(Number),
+      giftCount: sql<number>`COUNT(*)`.mapWith(Number),
+    })
+    .from(giftRecord)
+    .innerJoin(user, eq(user.id, giftRecord.playerId))
+    .where(where)
+    .groupBy(giftRecord.playerId, user.name)
+    .orderBy(sql`SUM(${giftRecord.totalCents}) DESC`)
+    .limit(50);
+
+  const pairRows = await db
+    .select({
+      senderNickname: giftRecord.senderNickname,
+      playerId: giftRecord.playerId,
+      playerName: user.name,
+      totalCents: sql<number>`SUM(${giftRecord.totalCents})`.mapWith(Number),
+      giftCount: sql<number>`COUNT(*)`.mapWith(Number),
+    })
+    .from(giftRecord)
+    .innerJoin(user, eq(user.id, giftRecord.playerId))
+    .where(where)
+    .groupBy(giftRecord.senderNickname, giftRecord.playerId, user.name)
+    .orderBy(sql`SUM(${giftRecord.totalCents}) DESC`)
+    .limit(100);
+
+  return { senders: senderRows, players: playerRows, pairs: pairRows };
 }

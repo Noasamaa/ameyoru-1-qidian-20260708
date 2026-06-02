@@ -378,6 +378,14 @@ export const giftRecord = mysqlTable(
     senderNickname: varchar("sender_nickname", { length: 100 }).notNull(),
     note: varchar("note", { length: 500 }),
     operatorId: varchar("operator_id", { length: ID_LEN }).notNull(),
+    /** 提交人: 陪玩自填 = playerId 本人,后台代填 = BOSS/STAFF id */
+    submitterId: varchar("submitter_id", { length: ID_LEN }).notNull(),
+    /** 支付状态: UNSETTLED = 待支付, SETTLED = 已支付 */
+    settleStatus: mysqlEnum("settle_status", ["UNSETTLED", "SETTLED"])
+      .notNull()
+      .default("UNSETTLED"),
+    settledAt: ts("settled_at"),
+    paidMethod: mysqlEnum("paid_method", ["WECHAT", "ALIPAY"]),
     createdAt: ts("created_at")
       .notNull()
       .default(sql`CURRENT_TIMESTAMP(3)`),
@@ -388,5 +396,7 @@ export const giftRecord = mysqlTable(
   (t) => [
     index("gift_record_player_idx").on(t.playerId, t.createdAt),
     index("gift_record_created_idx").on(t.createdAt),
+    index("gift_record_settle_idx").on(t.settleStatus, t.createdAt),
+    index("gift_record_sender_idx").on(t.senderNickname),
   ]
 );

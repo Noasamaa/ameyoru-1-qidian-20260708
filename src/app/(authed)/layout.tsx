@@ -1,6 +1,9 @@
+import { eq, sql, and } from "drizzle-orm";
 import { requireSession } from "@/lib/auth-helpers";
 import { AppNav, type NavItem } from "@/components/app-nav";
 import { getMyUnreadGiftCount } from "@/server/actions/gifts";
+import { db } from "@/db";
+import { giftRecord } from "@/db/schema";
 import type { Role } from "@/db/schema";
 
 const bossNav: NavItem[] = [
@@ -57,13 +60,38 @@ export default async function AuthedLayout({
   const { user } = await requireSession();
   const nav = navForRole(user.role);
 
-  // 仅陪玩查询未读礼物数量,用于「礼物收入」入口的红点徽章
   let withBadges = nav;
   if (user.role === "PLAYER") {
-    const { count } = await getMyUnreadGiftCount();
-    if (count > 0) {
+    // 陪玩:未读已支付礼物数 + 自己的待支付报单数 都体现在「礼物收入」入口
+    const [{ count: unread }, pendingRows] = await Promise.all([
+      getMyUnreadGiftCount(),
+      db
+        .select({ count: sql<number>`count(*)`.mapWith(Number) })
+        .from(giftRecord)
+        .where(
+          and(
+            eq(giftRecord.playerId, user.id),
+            eq(giftRecord.settleStatus, "UNSETTLED")
+          )
+        ),
+    ]);
+    const pending = pendingRows[0]?.count ?? 0;
+    const total = unread + pending;
+    if (total > 0) {
       withBadges = nav.map((item) =>
-        item.href === "/my-gifts" ? { ...item, badge: count } : item
+        item.href === "/my-gifts" ? { ...item, badge: total } : item
+      );
+    }
+  } else if (user.role === "BOSS" || user.role === "STAFF") {
+    // 后台:待支付礼物报单数体现在「礼物」入口
+    const pendingRows = await db
+      .select({ count: sql<number>`count(*)`.mapWith(Number) })
+      .from(giftRecord)
+      .where(eq(giftRecord.settleStatus, "UNSETTLED"));
+    const pending = pendingRows[0]?.count ?? 0;
+    if (pending > 0) {
+      withBadges = nav.map((item) =>
+        item.href === "/gifts" ? { ...item, badge: pending } : item
       );
     }
   }
