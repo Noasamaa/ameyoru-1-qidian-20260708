@@ -287,7 +287,7 @@ export async function deleteCustomerAction(input: { id: string }) {
 }
 
 export async function listActivePlayersAction() {
-  await requireSession({ role: ["BOSS", "STAFF"] });
+  await requireSession({ role: ["BOSS", "STAFF", "SERVICE"] });
   const rows = await db
     .select({ id: user.id, name: user.name, username: user.username })
     .from(user)
@@ -303,7 +303,7 @@ export async function listActivePlayersAction() {
 export async function getCustomerLedgerAction(input: {
   customerId: string;
 }) {
-  await requireSession({ role: ["BOSS", "STAFF"] });
+  await requireSession({ role: ["BOSS", "STAFF", "SERVICE"] });
 
   const playerUser = aliasedTable(user, "ledger_player");
   const dispatcherUser = aliasedTable(user, "ledger_dispatcher");
