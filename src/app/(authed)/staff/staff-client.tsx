@@ -37,13 +37,9 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { EmptyState } from "@/components/empty-state";
-import { cn } from "@/lib/utils";
 import { avatarInitial, formatYuan } from "@/lib/format";
 import { PRICE_BUCKETS_CENTS } from "@/lib/constants";
-import {
-  createPlayerInviteAction,
-  deletePlayerInviteAction,
-} from "@/server/actions/player-invites";
+import { createPlayerInviteAction } from "@/server/actions/player-invites";
 import {
   createStaffAction,
   deleteStaffAction,
@@ -294,9 +290,7 @@ export function StaffClient({
 }
 
 function InviteList({ invites }: { invites: Invite[] }) {
-  const router = useRouter();
   const [copiedId, setCopiedId] = useState<string | null>(null);
-  const [, startTransition] = useTransition();
 
   if (invites.length === 0) return null;
 

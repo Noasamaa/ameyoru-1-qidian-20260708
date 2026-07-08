@@ -3,15 +3,16 @@
 import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
-import { Plus, Megaphone, PartyPopper, Trash2, ToggleLeft, ToggleRight, Pencil } from "lucide-react";
+import { Plus, Megaphone, Trash2, ToggleLeft, ToggleRight, Pencil } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { PageHeader } from "@/components/page-header";
 import { EmptyState } from "@/components/empty-state";
+import { formatDate } from "@/lib/format";
 import { upsertAnnouncementAction, toggleAnnouncementAction, deleteAnnouncementAction } from "@/server/actions/announcements";
 import type { UpsertAnnouncementInput } from "@/server/actions/announcements";
 
@@ -98,8 +99,8 @@ export function AnnouncementsClient({ items }: { items: Item[] }) {
                 {item.content && <p className="text-sm text-muted-foreground mt-1 line-clamp-2">{item.content}</p>}
                 <div className="text-xs text-muted-foreground mt-1">
                   排序: {item.sortOrder}
-                  {item.startAt && <> · 开始: {new Date(item.startAt).toLocaleDateString()}</>}
-                  {item.endAt && <> · 结束: {new Date(item.endAt).toLocaleDateString()}</>}
+                  {item.startAt && <> · 开始: {formatDate(item.startAt)}</>}
+                  {item.endAt && <> · 结束: {formatDate(item.endAt)}</>}
                 </div>
               </div>
               <div className="flex gap-1 shrink-0">
@@ -116,7 +117,10 @@ export function AnnouncementsClient({ items }: { items: Item[] }) {
 
       <Dialog open={showForm} onOpenChange={setShowForm}>
         <DialogContent>
-          <DialogHeader><DialogTitle>{editItem ? "编辑" : "新增"}公告/活动</DialogTitle></DialogHeader>
+          <DialogHeader>
+            <DialogTitle>{editItem ? "编辑" : "新增"}公告/活动</DialogTitle>
+            <DialogDescription className="sr-only">填写公告或活动的标题、内容和有效期</DialogDescription>
+          </DialogHeader>
           <div className="space-y-4">
             <div>
               <Label>类型</Label>

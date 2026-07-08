@@ -1,7 +1,7 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
-import { and, eq, sql, inArray } from "drizzle-orm";
+import { and, eq, ne, sql, inArray } from "drizzle-orm";
 import { z } from "zod";
 import { db } from "@/db";
 import { order, customer, customerBalanceTxn, user } from "@/db/schema";
@@ -41,8 +41,13 @@ const createSchema = z.object({
   customerWechat: optionalTrimmed(64),
   startAt: z.string(),
   endAt: z.string(),
-  hourlyRateYuan: z.string(),
-  discountYuan: z.string().optional(),
+  hourlyRateYuan: z
+    .string()
+    .regex(/^\d+(\.\d{1,2})?$/, "单价格式不正确"),
+  discountYuan: z
+    .string()
+    .regex(/^\d+(\.\d{1,2})?$/, "优惠格式不正确")
+    .optional(),
   usePrepay: z.boolean().optional(),
   note: z.string().optional().nullable(),
 });
@@ -388,7 +393,10 @@ const cancelSchema = z.object({
       return v ? v : null;
     }),
   /** 给陪玩的补偿金额(元),默认 0 */
-  compensationYuan: z.string().optional(),
+  compensationYuan: z
+    .string()
+    .regex(/^\d+(\.\d{1,2})?$/, "补偿金额格式不正确")
+    .optional(),
 });
 
 export type CancelOrderInput = z.input<typeof cancelSchema>;
@@ -422,9 +430,15 @@ export async function cancelOrderAction(input: CancelOrderInput) {
     return { ok: false as const, error: "订单已取消" };
   }
 
-  const compensationCents = compensationYuan
+  const requestedCompensationCents = compensationYuan
     ? Math.max(0, yuanStringToCents(compensationYuan))
     : 0;
+  // M2: 取消前已结算(已打款)的订单,取消后保持 SETTLED,不重开结算(避免二次打款)
+  const wasSettled = target.settleStatus === "SETTLED";
+  if (wasSettled && requestedCompensationCents > 0) {
+    return { ok: false as const, error: "已付款订单取消后不会重新打款,补偿请填 0" };
+  }
+  const compensationCents = wasSettled ? 0 : requestedCompensationCents;
   if (compensationCents > target.playerEarnCents) {
     return { ok: false as const, error: "补偿不能超过原应得金额" };
   }
@@ -433,8 +447,11 @@ export async function cancelOrderAction(input: CancelOrderInput) {
   const now = new Date();
   const noCompensation = compensationCents === 0;
 
+  let canceled = false;
   await db.transaction(async (tx) => {
-    await tx
+    // H2: 守卫 orderStatus<>'CANCELED',保证并发双重取消时只有一方真正改动行,
+    // 退款与退存流水也只在真正改动行时执行一次
+    const [res] = await tx
       .update(order)
       .set({
         orderStatus: "CANCELED",
@@ -442,11 +459,19 @@ export async function cancelOrderAction(input: CancelOrderInput) {
         cancelFault: fault,
         cancelNote: note,
         playerCompensationCents: compensationCents,
-        settleStatus: noCompensation ? "SETTLED" : "UNSETTLED",
-        settledAt: noCompensation ? now : null,
-        paidMethod: null,
+        prepayUsedCents: 0,
+        // wasSettled 时保留原有结算状态/时间/支付方式,不重开结算
+        ...(wasSettled
+          ? {}
+          : {
+              settleStatus: noCompensation ? "SETTLED" : "UNSETTLED",
+              settledAt: noCompensation ? now : null,
+              paidMethod: null,
+            }),
       })
-      .where(eq(order.id, id));
+      .where(and(eq(order.id, id), ne(order.orderStatus, "CANCELED")));
+    if (res.affectedRows === 0) return; // 并发下已被取消,跳过退款与副作用
+    canceled = true;
 
     if (target.prepayUsedCents > 0) {
       await tx
@@ -466,6 +491,9 @@ export async function cancelOrderAction(input: CancelOrderInput) {
       });
     }
   });
+  if (!canceled) {
+    return { ok: false as const, error: "订单已取消" };
+  }
   invalidatePages(id);
 
   notifyOrderCanceled({
@@ -501,17 +529,18 @@ export async function settleOrderAction(input: {
   if (!canSettle) {
     return { ok: false as const, error: "订单尚未完成或取消,无法结算" };
   }
-  if (target.settleStatus === "SETTLED") {
-    return { ok: false as const, error: "已结算,请勿重复操作" };
-  }
-  await db
+  // 原子守卫:仅当仍为 UNSETTLED 时结算,避免读后写竞态导致重复打款/重复通知
+  const [res] = await db
     .update(order)
     .set({
       settleStatus: "SETTLED",
       settledAt: new Date(),
       paidMethod: input.paidMethod ?? null,
     })
-    .where(eq(order.id, input.id));
+    .where(and(eq(order.id, input.id), eq(order.settleStatus, "UNSETTLED")));
+  if (res.affectedRows === 0) {
+    return { ok: false as const, error: "已结算,请勿重复操作" };
+  }
   invalidatePages(input.id);
 
   // 取消单结算时金额是补偿,完成单是应得
@@ -531,10 +560,14 @@ export async function settleOrderAction(input: {
 
 export async function unsettleOrderAction(input: { id: string }) {
   const { user: me } = await requireSession({ role: ["BOSS", "STAFF"] });
-  await db
+  // 原子守卫:仅当当前确为 SETTLED 时才回退,幂等且防并发重复操作
+  const [res] = await db
     .update(order)
     .set({ settleStatus: "UNSETTLED", settledAt: null, paidMethod: null })
-    .where(eq(order.id, input.id));
+    .where(and(eq(order.id, input.id), eq(order.settleStatus, "SETTLED")));
+  if (res.affectedRows === 0) {
+    return { ok: false as const, error: "订单未结算或不存在,无法撤销结算" };
+  }
   logAudit({ actorId: me.id, actorName: me.name, action: "UNSETTLE_ORDER", targetType: "order", targetId: input.id });
   invalidatePages(input.id);
   return { ok: true as const };
@@ -564,11 +597,13 @@ export async function batchSettleAction(input: {
       .map((t) => t.id);
 
     if (eligibleIds.length > 0) {
-      await tx
+      // 原子守卫:再带上 settleStatus='UNSETTLED' 条件,只结算仍未结算的行,
+      // 用 affectedRows 统计真正改动的行数,避免并发重复结算被重复计数
+      const [res] = await tx
         .update(order)
         .set({ settleStatus: "SETTLED", settledAt: now, paidMethod: input.paidMethod ?? null })
-        .where(inArray(order.id, eligibleIds));
-      settled = eligibleIds.length;
+        .where(and(inArray(order.id, eligibleIds), eq(order.settleStatus, "UNSETTLED")));
+      settled = res.affectedRows;
     }
   });
 
@@ -576,8 +611,6 @@ export async function batchSettleAction(input: {
     logAudit({ actorId: me.id, actorName: me.name, action: "BATCH_SETTLE", targetType: "order", detail: { count: settled, paidMethod: input.paidMethod } });
   }
 
-  revalidatePath("/overview");
-  revalidatePath("/orders");
-  revalidatePath("/payouts");
+  invalidatePages();
   return { ok: true as const, count: settled };
 }

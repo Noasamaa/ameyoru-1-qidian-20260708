@@ -4,6 +4,7 @@ import { useState } from "react";
 import { Megaphone, PartyPopper, ChevronDown, ChevronUp } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Card } from "@/components/ui/card";
+import { formatDate } from "@/lib/format";
 
 interface AnnouncementItem {
   id: string;
@@ -18,8 +19,6 @@ export function AnnouncementsBanner({ items }: { items: AnnouncementItem[] }) {
   const [expanded, setExpanded] = useState(false);
   if (items.length === 0) return null;
 
-  const notices = items.filter((i) => i.type === "NOTICE");
-  const activities = items.filter((i) => i.type === "ACTIVITY");
   const showToggle = items.length > 2;
   const visible = expanded ? items : items.slice(0, 2);
 
@@ -35,7 +34,7 @@ export function AnnouncementsBanner({ items }: { items: AnnouncementItem[] }) {
               <span className="font-bold text-base">{item.title}</span>
               {item.type === "ACTIVITY" && (
                 <Badge variant="outline" className="text-[10px]">
-                  {item.isPermanent ? "长期有效" : item.endAt ? `截止 ${new Date(item.endAt).toLocaleDateString()}` : "活动"}
+                  {item.isPermanent ? "长期有效" : item.endAt ? `截止 ${formatDate(item.endAt)}` : "活动"}
                 </Badge>
               )}
             </div>

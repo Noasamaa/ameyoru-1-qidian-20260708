@@ -1,3 +1,5 @@
+// Structure smoke-check (static grep), NOT a behavioral test.
+// 仅对源码文本做正则断言,确认预存/扣款相关字段与调用点存在;不执行任何业务逻辑。
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
@@ -15,15 +17,15 @@ const orderForm = read("src/app/(authed)/orders/new/order-form.tsx");
 const ordersPage = read("src/app/(authed)/orders/page.tsx");
 const ordersList = read("src/app/(authed)/orders/orders-list.tsx");
 
-assert.match(schema, /balanceCents:\s*integer\("balance_cents"\)/);
+assert.match(schema, /balanceCents:\s*int\("balance_cents"\)/);
 assert.match(
   schema,
-  /customerBalanceTxn\s*=\s*sqliteTable\(\s*"customer_balance_txn"/
+  /customerBalanceTxn\s*=\s*mysqlTable\(\s*"customer_balance_txn"/
 );
 assert.match(schema, /"DEPOSIT"/);
 assert.match(schema, /"ORDER_DEBIT"/);
 assert.match(schema, /"ORDER_REFUND"/);
-assert.match(schema, /prepayUsedCents:\s*integer\("prepay_used_cents"\)/);
+assert.match(schema, /prepayUsedCents:\s*int\("prepay_used_cents"\)/);
 
 assert.match(customersAction, /addCustomerDepositAction/);
 assert.match(customersAction, /customerBalanceTxn/);

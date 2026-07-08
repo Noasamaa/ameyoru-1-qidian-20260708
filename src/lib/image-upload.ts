@@ -87,9 +87,12 @@ function detectImageUpload(bytes: Buffer): { ext: string } | null {
 }
 
 function hasSupportedMime(type: string): boolean {
+  // 空 type / application/octet-stream 放行:很多客户端上传图片时不带或带通用
+  // 二进制 type(测试也覆盖了这种情况),真正的把关是下面的 magic-byte 嗅探。
   if (!type || type === "application/octet-stream") return true;
-  if (SUPPORTED_MIME_TYPES.has(type)) return true;
-  return type.startsWith("image/");
+  // 其余只认显式白名单——不再用 `image/*` 兜底,
+  // 这样 image/svg+xml 等危险/不支持的类型会被直接拒掉。
+  return SUPPORTED_MIME_TYPES.has(type);
 }
 
 export async function readImageUpload(

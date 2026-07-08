@@ -119,7 +119,6 @@ function rowPayoutCents(o: OrderRow): number {
 
 export function OrdersList({
   role,
-  myId,
   orders,
   initialOpenId,
   currentTab,
@@ -128,7 +127,6 @@ export function OrdersList({
   dateTo,
 }: {
   role: Role;
-  myId: string;
   orders: OrderRow[];
   initialOpenId?: string | null;
   currentTab?: string;
@@ -300,7 +298,6 @@ export function OrdersList({
       <OrderDetailSheet
         order={openOrder}
         role={role}
-        myId={myId}
         onClose={() => setOpenId(null)}
       />
 
@@ -350,12 +347,10 @@ export function OrdersList({
 function OrderDetailSheet({
   order,
   role,
-  myId,
   onClose,
 }: {
   order: OrderRow | null;
   role: Role;
-  myId: string;
   onClose: () => void;
 }) {
   const router = useRouter();
@@ -619,7 +614,6 @@ function OrderDetailSheet({
               <ActionBar
                 order={order}
                 canManage={canManage}
-                isOwnOrder={order.playerId === myId}
                 pending={pending}
                 onComplete={() =>
                   run(
@@ -687,7 +681,6 @@ function OrderDetailSheet({
 function ActionBar({
   order,
   canManage,
-  isOwnOrder,
   pending,
   onComplete,
   onOpenCancel,
@@ -697,7 +690,6 @@ function ActionBar({
 }: {
   order: OrderRow;
   canManage: boolean;
-  isOwnOrder: boolean;
   pending: boolean;
   onComplete: () => void;
   onOpenCancel: () => void;
@@ -976,11 +968,12 @@ function CancelDialog({
               max={centsToYuanString(playerEarnCents)}
               value={compensation}
               onChange={(e) => setCompensation(e.target.value)}
+              disabled={wasSettled}
               placeholder="0(无补偿)"
             />
             <p className="text-xs text-muted-foreground">
               {wasSettled ? (
-                "陪玩已收过原应得,通常填 0;如需额外追加再填写"
+                "陪玩已收过原应得,取消后不会重新进入待结算"
               ) : (
                 <>
                   {fault === "PLAYER" && "陪玩责任 — 通常 0 补偿"}

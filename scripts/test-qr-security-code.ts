@@ -1,3 +1,6 @@
+// Structure smoke-check (static grep), NOT a behavioral test.
+// 多数断言只对源码文本做正则校验,确认收款码安全码相关代码存在;
+// 末尾对 readImageUpload 做一次真实调用,算唯一的行为校验。
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
@@ -19,7 +22,7 @@ const playersPage = read("src/app/(authed)/players/page.tsx");
 const playersClient = read("src/app/(authed)/players/players-client.tsx");
 const migrate = read("scripts/migrate-qr-security.ts");
 
-assert.match(schema, /qrSecurityCodeHash:\s*text\("qr_security_code_hash"\)/);
+assert.match(schema, /qrSecurityCodeHash:\s*varchar\("qr_security_code_hash"/);
 assert.match(auth, /qrSecurityCodeHash/);
 assert.match(read("src/lib/qr-security.ts"), /qrSecurityCodeSchema/);
 
@@ -36,7 +39,20 @@ assert.match(imageUpload, /GIF89a|GIF87a/);
 assert.match(imageUpload, /0x42/);
 assert.match(imageUpload, /avif/);
 assert.match(imageUpload, /heic/);
+
+// 收款码私有文件代理路由 src/app/api/uploads/[...path]/route.ts 的安全要求:
+// 1) 必须登录(收款码是敏感财务数据) 2) 拒绝路径穿越 3) 扩展名→Content-Type 白名单
+// 4) 响应带 nosniff。以下断言尽量宽松,只校验关键安全特征,不绑定具体写法。
+// 鉴权:requireSession 守卫。
+assert.match(uploadRoute, /requireSession\(/);
+// 路径穿越防护:显式拒绝 ".." 段(以及通常的根目录归属校验)。
+assert.match(uploadRoute, /"\.\."/);
+// 扩展名 → Content-Type 白名单:至少覆盖 png 与 heif 两个映射。
+assert.match(uploadRoute, /png:\s*"image\/png"/);
 assert.match(uploadRoute, /heif:\s*"image\/heif"/);
+// 防 MIME 嗅探:nosniff 响应头。
+assert.match(uploadRoute, /X-Content-Type-Options/);
+assert.match(uploadRoute, /nosniff/);
 
 assert.match(usersAction, /qrSecurityCodeSchema/);
 assert.match(usersAction, /qrSecurityCodeHash/);

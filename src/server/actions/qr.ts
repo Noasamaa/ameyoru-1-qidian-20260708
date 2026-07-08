@@ -19,7 +19,30 @@ type QrType = "WECHAT" | "ALIPAY";
 const fieldFor = (t: QrType) =>
   t === "WECHAT" ? ("wechatQrPath" as const) : ("alipayQrPath" as const);
 
+// 收款码安全码暴力破解的尽力而为节流。
+// 局限:仅进程内(in-memory),多实例 / 重启 / serverless 冷启动后失效;
+// 真正的防护应落到持久层。这里只是拖慢同进程内的连续爆破。
+const MAX_QR_ATTEMPTS = 5;
+const QR_LOCKOUT_MS = 5 * 60 * 1000; // 锁定 5 分钟
+const qrAttempts = new Map<string, { count: number; lockedUntil: number }>();
+
 async function verifyQrSecurityCode(userId: string, securityCode: string) {
+  const now = Date.now();
+  let attempt = qrAttempts.get(userId);
+  if (attempt) {
+    if (attempt.lockedUntil > now) {
+      return {
+        ok: false as const,
+        error: "尝试次数过多,请稍后再试",
+      };
+    }
+    // 锁定已过期,清掉旧计数,给一个新的尝试窗口。
+    if (attempt.lockedUntil > 0) {
+      qrAttempts.delete(userId);
+      attempt = undefined;
+    }
+  }
+
   if (!securityCode.trim()) {
     return { ok: false as const, error: "请输入收款码安全码" };
   }
@@ -47,9 +70,16 @@ async function verifyQrSecurityCode(userId: string, securityCode: string) {
     password: parsed.data,
   });
   if (!verified) {
+    const count = (attempt?.count ?? 0) + 1;
+    qrAttempts.set(userId, {
+      count,
+      lockedUntil: count >= MAX_QR_ATTEMPTS ? now + QR_LOCKOUT_MS : 0,
+    });
     return { ok: false as const, error: "收款码安全码错误" };
   }
 
+  // 验证成功,清掉失败计数。
+  qrAttempts.delete(userId);
   return { ok: true as const };
 }
 
@@ -93,6 +123,7 @@ export async function uploadQrCodeAction(formData: FormData) {
 
   revalidatePath("/profile");
   revalidatePath("/orders");
+  revalidatePath("/gifts");
   return { ok: true as const, path: `qr/${filename}` };
 }
 
@@ -121,5 +152,6 @@ export async function deleteQrCodeAction(input: {
   await db.update(user).set({ [field]: null }).where(eq(user.id, me.id));
   revalidatePath("/profile");
   revalidatePath("/orders");
+  revalidatePath("/gifts");
   return { ok: true as const };
 }

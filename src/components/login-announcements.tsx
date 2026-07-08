@@ -5,6 +5,7 @@ import { Megaphone, PartyPopper, CheckCircle2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
+import { formatDate } from "@/lib/format";
 
 interface Item {
   id: string;
@@ -47,7 +48,7 @@ export function LoginAnnouncements({
                 <span className="text-lg font-bold">{item.title}</span>
                 {item.type === "ACTIVITY" && (
                   <Badge variant="secondary" className="text-xs">
-                    {item.isPermanent ? "长期有效" : item.endAt ? `截止 ${new Date(item.endAt).toLocaleDateString()}` : "活动"}
+                    {item.isPermanent ? "长期有效" : item.endAt ? `截止 ${formatDate(item.endAt)}` : "活动"}
                   </Badge>
                 )}
               </div>

@@ -448,6 +448,9 @@ export function GiftsAdminClient({
         <DialogContent>
           <DialogHeader>
             <DialogTitle>{editing ? "编辑礼物记录" : "新增礼物记录"}</DialogTitle>
+            <DialogDescription className="sr-only">
+              填写陪玩、礼物档位、数量与打赏人,系统自动计算平台抽成与陪玩到手金额
+            </DialogDescription>
           </DialogHeader>
           <div className="space-y-4">
             <div>

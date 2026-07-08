@@ -82,7 +82,7 @@ export default async function LeaderboardPage({
       </div>
 
       {type === "gifts" ? (
-        <GiftsBoard sp={sp} />
+        <GiftsBoard sp={sp} myId={me.id} isManager={me.role === "BOSS" || me.role === "STAFF"} />
       ) : (
         <OrdersBoard sp={sp} myId={me.id} isBoss={me.role === "BOSS" || me.role === "STAFF"} />
       )}
@@ -238,20 +238,45 @@ async function OrdersBoard({
 
 /* ============================ 礼物打赏排行 ============================ */
 
-async function GiftsBoard({ sp }: { sp: { range?: string; view?: string } }) {
+async function GiftsBoard({
+  sp,
+  myId,
+  isManager,
+}: {
+  sp: { range?: string; view?: string };
+  myId: string;
+  isManager: boolean;
+}) {
   const range = (giftRanges.includes(sp.range as (typeof giftRanges)[number])
     ? sp.range
     : "all") as (typeof giftRanges)[number];
-  const view = (sp.view === "senders" || sp.view === "players" ? sp.view : "pairs") as
+  const requestedView = (sp.view === "senders" || sp.view === "players" ? sp.view : "pairs") as
     | "pairs"
     | "senders"
     | "players";
+  // 陪玩只能看「受宠陪玩榜」——打赏大佬榜/谁打赏谁会泄露打赏人及打赏关系
+  const view = isManager ? requestedView : "players";
 
   const { senders, players, pairs } = await giftLeaderboard(range);
   const isEmpty =
     (view === "pairs" && pairs.length === 0) ||
     (view === "senders" && senders.length === 0) ||
     (view === "players" && players.length === 0);
+
+  // 陪玩在受宠陪玩榜里的名次(只用于展示"你排第几")
+  const myRankIdx = isManager ? -1 : players.findIndex((p) => p.playerId === myId);
+  const myRankLabel =
+    myRankIdx >= 0 ? `你排第 ${myRankIdx + 1},共 ${players.length} 人` : null;
+
+  const views = (
+    isManager
+      ? [
+          { key: "pairs", label: "谁打赏谁" },
+          { key: "senders", label: "打赏大佬榜" },
+          { key: "players", label: "受宠陪玩榜" },
+        ]
+      : [{ key: "players", label: "受宠陪玩榜" }]
+  ) as { key: "pairs" | "senders" | "players"; label: string }[];
 
   function rangeHref(r: (typeof giftRanges)[number]) {
     return `/leaderboard?type=gifts&range=${r}&view=${view}`;
@@ -263,7 +288,7 @@ async function GiftsBoard({ sp }: { sp: { range?: string; view?: string } }) {
   return (
     <>
       {/* 时间范围 */}
-      <div className="mb-3 flex flex-wrap items-center gap-2">
+      <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
         <div className="inline-flex h-9 items-center justify-center rounded-lg bg-muted p-[3px]">
           {giftRanges.map((r) => (
             <Link
@@ -281,32 +306,33 @@ async function GiftsBoard({ sp }: { sp: { range?: string; view?: string } }) {
             </Link>
           ))}
         </div>
+        {myRankLabel && (
+          <Badge variant="secondary" className="text-xs">
+            {myRankLabel}
+          </Badge>
+        )}
       </div>
 
-      {/* 视图切换 */}
-      <div className="mb-6 inline-flex h-9 items-center justify-center rounded-lg bg-muted p-[3px]">
-        {(
-          [
-            { key: "pairs", label: "谁打赏谁" },
-            { key: "senders", label: "打赏大佬榜" },
-            { key: "players", label: "受宠陪玩榜" },
-          ] as const
-        ).map((v) => (
-          <Link
-            key={v.key}
-            href={viewHref(v.key)}
-            scroll={false}
-            className={cn(
-              "inline-flex h-full items-center rounded-md px-4 text-sm font-medium transition-all",
-              v.key === view
-                ? "bg-background text-foreground shadow-sm"
-                : "text-muted-foreground hover:text-foreground"
-            )}
-          >
-            {v.label}
-          </Link>
-        ))}
-      </div>
+      {/* 视图切换(陪玩只有一个视图) */}
+      {views.length > 1 && (
+        <div className="mb-6 inline-flex h-9 items-center justify-center rounded-lg bg-muted p-[3px]">
+          {views.map((v) => (
+            <Link
+              key={v.key}
+              href={viewHref(v.key)}
+              scroll={false}
+              className={cn(
+                "inline-flex h-full items-center rounded-md px-4 text-sm font-medium transition-all",
+                v.key === view
+                  ? "bg-background text-foreground shadow-sm"
+                  : "text-muted-foreground hover:text-foreground"
+              )}
+            >
+              {v.label}
+            </Link>
+          ))}
+        </div>
+      )}
 
       {isEmpty ? (
         <EmptyState
@@ -319,7 +345,7 @@ async function GiftsBoard({ sp }: { sp: { range?: string; view?: string } }) {
       ) : view === "senders" ? (
         <SenderList senders={senders} />
       ) : (
-        <PlayerList players={players} />
+        <PlayerList players={players} isManager={isManager} myId={myId} />
       )}
     </>
   );
@@ -441,6 +467,8 @@ function SenderList({
 
 function PlayerList({
   players,
+  isManager,
+  myId,
 }: {
   players: {
     playerId: string;
@@ -449,6 +477,8 @@ function PlayerList({
     earnCents: number;
     giftCount: number;
   }[];
+  isManager: boolean;
+  myId: string;
 }) {
   return (
     <Card className="overflow-hidden p-0">
@@ -456,12 +486,16 @@ function PlayerList({
         {players.map((p, i) => {
           const rank = i + 1;
           const emoji = rankBadge(rank);
+          const isMe = p.playerId === myId;
+          // 陪玩只能看到自己的金额;其他人的金额已在服务端清零,这里隐藏不展示
+          const showMoney = isManager || isMe;
           return (
             <li
               key={p.playerId}
               className={cn(
                 "flex items-center gap-3 px-4 py-3",
-                rank <= 3 && "bg-gradient-to-r from-pink-50/60 to-transparent dark:from-pink-950/20"
+                rank <= 3 && "bg-gradient-to-r from-pink-50/60 to-transparent dark:from-pink-950/20",
+                isMe && !isManager && "bg-primary/5"
               )}
             >
               <div className="w-8 text-center text-sm font-mono font-semibold text-muted-foreground">
@@ -471,15 +505,25 @@ function PlayerList({
                 <AvatarFallback>{avatarInitial(p.playerName)}</AvatarFallback>
               </Avatar>
               <div className="min-w-0 flex-1">
-                <div className="font-semibold truncate">{p.playerName}</div>
+                <div className="font-semibold truncate">
+                  {p.playerName}
+                  {isMe && !isManager && (
+                    <span className="ml-1 text-xs text-primary">(你)</span>
+                  )}
+                </div>
                 <div className="mt-0.5 text-xs text-muted-foreground">
-                  收到 {p.giftCount} 笔打赏 · 到手{" "}
-                  <span className="font-mono">{formatYuan(p.earnCents)}</span>
+                  收到 {p.giftCount} 笔打赏
+                  {showMoney && (
+                    <>
+                      {" · 到手 "}
+                      <span className="font-mono">{formatYuan(p.earnCents)}</span>
+                    </>
+                  )}
                 </div>
               </div>
               <div className="shrink-0 text-right font-mono tabular-nums">
                 <div className="font-semibold text-pink-600">
-                  {formatYuan(p.totalCents)}
+                  {showMoney ? formatYuan(p.totalCents) : "—"}
                 </div>
               </div>
             </li>

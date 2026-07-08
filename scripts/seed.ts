@@ -1,7 +1,7 @@
 /**
  * 创建初始老板账号。
  * 用 `npm run db:seed` 运行。
- * 需要先 `npm run db:push` 把 schema 推到 SQLite。
+ * 需要先 `npm run db:push` 把 schema 推到 MySQL。
  */
 import { config } from "dotenv";
 config({ path: ".env" });

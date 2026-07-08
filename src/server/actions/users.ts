@@ -4,7 +4,7 @@ import { revalidatePath } from "next/cache";
 import { mkdir, unlink, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { logAudit } from "@/server/audit";
-import { and, eq } from "drizzle-orm";
+import { and, eq, lt, or } from "drizzle-orm";
 import { sql } from "drizzle-orm";
 import { z } from "zod";
 import { db } from "@/db";
@@ -450,6 +450,15 @@ export async function completePlayerInviteAction(
   if (parsed.data.qrSecurityCode === parsed.data.password) {
     return { ok: false, error: "安全码不能和登录密码一样" };
   }
+
+  // 用户名冲突属于可预期失败,提前判掉以免占用并随后回退名额。
+  const [dup] = await db
+    .select({ id: user.id })
+    .from(user)
+    .where(eq(user.username, parsed.data.username))
+    .limit(1);
+  if (dup) return { ok: false, error: "用户名已存在" };
+
   const ctx = await auth.$context;
   const qrSecurityCodeHash = await ctx.password.hash(
     parsed.data.qrSecurityCode
@@ -463,6 +472,37 @@ export async function completePlayerInviteAction(
   if (!alipayUpload) return { ok: false, error: "请上传支付宝收款码" };
   if (!alipayUpload.ok) return { ok: false, error: alipayUpload.error };
 
+  // 原子占用名额(防 TOCTOU 并发重复消耗):
+  // 守卫式自增 `use_count`,WHERE 同时校验上限;只有恰好影响 1 行才算占到名额。
+  // 必须在创建账号之前完成占用,否则并发请求会把单次邀请烧成多次。
+  let reserved = false;
+  try {
+    await db.transaction(async (tx) => {
+      const result = await tx
+        .update(playerInvite)
+        .set({ useCount: sql`${playerInvite.useCount} + 1` })
+        .where(
+          and(
+            eq(playerInvite.id, inviteId),
+            or(
+              eq(playerInvite.maxUses, 0),
+              lt(playerInvite.useCount, playerInvite.maxUses)
+            )
+          )
+        );
+      // mysql2 update 结果为 [ResultSetHeader, ...],affectedRows = 实际改动行数。
+      if (result[0].affectedRows !== 1) {
+        throw new Error("链接已达使用上限");
+      }
+    });
+    reserved = true;
+  } catch (e) {
+    return {
+      ok: false,
+      error: e instanceof Error ? e.message : "链接已达使用上限",
+    };
+  }
+
   const res = await createUser({
     username: parsed.data.username,
     displayName: parsed.data.displayName,
@@ -475,6 +515,13 @@ export async function completePlayerInviteAction(
     qrSecurityCodeHash,
   });
   if (!res.ok) {
+    // 账号创建失败:回退已占用的名额,避免把名额烧掉。
+    if (reserved) {
+      await db
+        .update(playerInvite)
+        .set({ useCount: sql`${playerInvite.useCount} - 1` })
+        .where(eq(playerInvite.id, inviteId));
+    }
     return res;
   }
 
@@ -487,11 +534,10 @@ export async function completePlayerInviteAction(
     return { ok: false, error: "创建失败" };
   }
 
-  // 账号真正创建成功后才消耗名额,避免用户名冲突等失败把单次邀请烧掉
+  // 名额已原子占用,这里只补记最后使用时间/使用者。
   await db
     .update(playerInvite)
     .set({
-      useCount: sql`${playerInvite.useCount} + 1`,
       usedAt: new Date(),
       usedById: created.id,
     })
@@ -507,6 +553,16 @@ export async function completePlayerInviteAction(
 
 export async function toggleDepositAction(input: { id: string; depositPaid: boolean }) {
   const { user: me } = await requireSession({ role: ["BOSS", "STAFF"] });
+
+  const [target] = await db
+    .select({ role: user.role })
+    .from(user)
+    .where(eq(user.id, input.id))
+    .limit(1);
+  if (!target || target.role !== "PLAYER") {
+    return { ok: false as const, error: "陪玩不存在" };
+  }
+
   await db.update(user).set({ depositPaid: input.depositPaid }).where(eq(user.id, input.id));
   logAudit({ actorId: me.id, actorName: me.name, action: input.depositPaid ? "MARK_DEPOSIT_PAID" : "MARK_DEPOSIT_UNPAID", targetType: "user", targetId: input.id });
   revalidatePath("/players");

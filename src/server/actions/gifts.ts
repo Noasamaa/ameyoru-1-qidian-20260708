@@ -1,11 +1,12 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
-import { and, desc, eq, gte, inArray, lte, sql } from "drizzle-orm";
+import { and, desc, eq, gt, gte, inArray, lte, sql } from "drizzle-orm";
 import { z } from "zod";
 import { db } from "@/db";
 import { giftRecord, user, GIFT_TIER_CENTS } from "@/db/schema";
 import { requireSession } from "@/lib/auth-helpers";
+import { rangeOf } from "@/lib/date-range";
 import { DEFAULT_GIFT_FEE_RATE_BP, GIFT_TIER_LABELS } from "@/lib/constants";
 import { nanoid } from "../id";
 import { logAudit } from "@/server/audit";
@@ -48,7 +49,8 @@ function invalidate() {
   revalidatePath("/gifts");
   revalidatePath("/my-gifts");
   revalidatePath("/leaderboard");
-  revalidatePath("/(authed)", "layout");
+  // 路由组 (authed) 会被从 URL 中剥离,必须用真实的根布局路径才能刷新导航徽标
+  revalidatePath("/", "layout");
 }
 
 /**
@@ -107,9 +109,10 @@ export async function upsertGiftRecordAction(input: UpsertGiftRecordInput) {
       if (existing.submitterId !== me.id) {
         return { ok: false as const, error: "只能编辑自己提交的报单" };
       }
-      if (existing.settleStatus === "SETTLED") {
-        return { ok: false as const, error: "已支付的报单不能修改,请联系管理员" };
-      }
+    }
+    // 已支付的报单不能修改(管理员也不行),与订单一致:需先撤销支付再改
+    if (existing.settleStatus === "SETTLED") {
+      return { ok: false as const, error: "已支付的报单不能修改,请先撤销支付" };
     }
 
     const { platformFee: pf2, playerEarn: pe2 } = computeSplit(totalCents, existing.feeRateBp);
@@ -127,13 +130,6 @@ export async function upsertGiftRecordAction(input: UpsertGiftRecordInput) {
         updatedAt: new Date(),
       })
       .where(eq(giftRecord.id, d.id));
-
-    if (existing.playerId !== d.playerId) {
-      await db
-        .update(user)
-        .set({ lastGiftSeenAt: null })
-        .where(eq(user.id, d.playerId));
-    }
 
     logAudit({
       actorId: me.id,
@@ -165,11 +161,6 @@ export async function upsertGiftRecordAction(input: UpsertGiftRecordInput) {
       submitterId: me.id,
       settleStatus: "UNSETTLED",
     });
-    await db
-      .update(user)
-      .set({ lastGiftSeenAt: null })
-      .where(eq(user.id, d.playerId));
-
     logAudit({
       actorId: me.id,
       actorName: me.name,
@@ -267,6 +258,12 @@ export async function settleGiftAction(input: {
       updatedAt: new Date(),
     })
     .where(eq(giftRecord.id, input.id));
+
+  // 支付即"收到打赏",只在支付成功后重置已读标记,触发红点/弹窗。
+  await db
+    .update(user)
+    .set({ lastGiftSeenAt: null })
+    .where(eq(user.id, target.playerId));
 
   logAudit({
     actorId: me.id,
@@ -443,11 +440,14 @@ export async function getMyUnreadGiftCount() {
     .limit(1);
   const since = u?.lastGiftSeenAt ?? null;
 
+  // 未读 = 已支付,且"支付时间"晚于上次查看标记。
+  // 必须比对 settledAt(而非 createdAt):报单先创建、后支付,createdAt 不变,
+  // 否则 create→settle 的正常流程永远算不出未读。
   const baseConds = [
     eq(giftRecord.playerId, me.id),
     eq(giftRecord.settleStatus, "SETTLED"),
   ];
-  if (since) baseConds.push(gte(giftRecord.createdAt, since));
+  if (since) baseConds.push(gt(giftRecord.settledAt, since));
   const [row] = await db
     .select({ count: sql<number>`count(*)`.mapWith(Number) })
     .from(giftRecord)
@@ -458,7 +458,12 @@ export async function getMyUnreadGiftCount() {
   };
 }
 
-export async function fetchAndMarkUnreadGifts() {
+/**
+ * 陪玩:读取未读(已支付)礼物用于弹窗。**只读,不写**——
+ * 不能在 Server Component 渲染期间写库。标记已读由 {@link markGiftsReadAction}
+ * 在客户端弹窗展示后单独触发。
+ */
+export async function getMyUnreadGifts() {
   const { user: me } = await requireSession({ role: "PLAYER" });
   const [u] = await db
     .select({ lastGiftSeenAt: user.lastGiftSeenAt })
@@ -471,7 +476,8 @@ export async function fetchAndMarkUnreadGifts() {
     eq(giftRecord.playerId, me.id),
     eq(giftRecord.settleStatus, "SETTLED"),
   ];
-  if (since) baseConds.push(gte(giftRecord.createdAt, since));
+  // 比对 settledAt(支付时间),与 getMyUnreadGiftCount / 徽标保持一致
+  if (since) baseConds.push(gt(giftRecord.settledAt, since));
   const rows = await db
     .select({
       id: giftRecord.id,
@@ -485,13 +491,8 @@ export async function fetchAndMarkUnreadGifts() {
     })
     .from(giftRecord)
     .where(and(...baseConds))
-    .orderBy(desc(giftRecord.createdAt))
+    .orderBy(desc(giftRecord.settledAt))
     .limit(20);
-
-  await db
-    .update(user)
-    .set({ lastGiftSeenAt: new Date() })
-    .where(eq(user.id, me.id));
 
   return rows.map((r) => ({
     ...r,
@@ -499,55 +500,61 @@ export async function fetchAndMarkUnreadGifts() {
   }));
 }
 
+/**
+ * 陪玩:把"礼物收入"标记为已读(推进 lastGiftSeenAt 到当前时间),并刷新导航徽标。
+ * 由客户端在弹窗展示/关闭后调用,避免在渲染期间写库。
+ * 幂等:重复调用只是把标记继续前推,React StrictMode 双调用安全。
+ */
+export async function markGiftsReadAction() {
+  const { user: me } = await requireSession({ role: "PLAYER" });
+  await db
+    .update(user)
+    .set({ lastGiftSeenAt: new Date() })
+    .where(eq(user.id, me.id));
+  // 推进已读标记后,刷新根布局以清掉「礼物收入」未读徽标
+  revalidatePath("/", "layout");
+  return { ok: true as const };
+}
+
 /* ----------------------------- 排行榜 ----------------------------- */
 
 const rangeSchema = z.enum(["today", "week", "month", "all"]).default("all");
 
-function rangeStart(range: z.infer<typeof rangeSchema>): Date | null {
-  if (range === "all") return null;
-  const now = new Date();
-  if (range === "today") {
-    const d = new Date(now);
-    d.setHours(0, 0, 0, 0);
-    return d;
-  }
-  if (range === "week") {
-    const d = new Date(now);
-    d.setDate(d.getDate() - 7);
-    return d;
-  }
-  if (range === "month") {
-    const d = new Date(now);
-    d.setMonth(d.getMonth() - 1);
-    return d;
-  }
-  return null;
-}
-
 /**
  * 礼物打赏排行榜:只统计已支付的记录,展示"谁打赏谁"。
+ *
+ * 隐私:陪玩(PLAYER)只能看到受宠陪玩榜里自己的具体金额,
+ * 其他陪玩的金额被清零(对照接单排行榜对非管理者的处理);
+ * 打赏大佬榜(暴露打赏人昵称)与"谁打赏谁"配对图(完整的打赏关系网)
+ * 仅对 BOSS/STAFF 开放,对陪玩返回空数组。
  */
 export async function giftLeaderboard(range: "today" | "week" | "month" | "all" = "all") {
-  await requireSession();
+  const { user: me } = await requireSession();
+  const isManager = me.role === "BOSS" || me.role === "STAFF";
   const r = rangeSchema.parse(range);
-  const since = rangeStart(r);
 
   const baseConds = [eq(giftRecord.settleStatus, "SETTLED")];
-  if (since) baseConds.push(gte(giftRecord.createdAt, since));
+  if (r !== "all") {
+    const { from, to } = rangeOf(r);
+    baseConds.push(gte(giftRecord.createdAt, from), lte(giftRecord.createdAt, to));
+  }
   const where = and(...baseConds);
 
-  const senderRows = await db
-    .select({
-      senderNickname: giftRecord.senderNickname,
-      totalCents: sql<number>`SUM(${giftRecord.totalCents})`.mapWith(Number),
-      giftCount: sql<number>`COUNT(*)`.mapWith(Number),
-      quantitySum: sql<number>`SUM(${giftRecord.quantity})`.mapWith(Number),
-    })
-    .from(giftRecord)
-    .where(where)
-    .groupBy(giftRecord.senderNickname)
-    .orderBy(sql`SUM(${giftRecord.totalCents}) DESC`)
-    .limit(50);
+  // 打赏大佬榜与配对图会泄露打赏人昵称及完整打赏关系,仅管理者可见
+  const senderRows = isManager
+    ? await db
+        .select({
+          senderNickname: giftRecord.senderNickname,
+          totalCents: sql<number>`SUM(${giftRecord.totalCents})`.mapWith(Number),
+          giftCount: sql<number>`COUNT(*)`.mapWith(Number),
+          quantitySum: sql<number>`SUM(${giftRecord.quantity})`.mapWith(Number),
+        })
+        .from(giftRecord)
+        .where(where)
+        .groupBy(giftRecord.senderNickname)
+        .orderBy(sql`SUM(${giftRecord.totalCents}) DESC`)
+        .limit(50)
+    : [];
 
   const playerRows = await db
     .select({
@@ -564,20 +571,31 @@ export async function giftLeaderboard(range: "today" | "week" | "month" | "all" 
     .orderBy(sql`SUM(${giftRecord.totalCents}) DESC`)
     .limit(50);
 
-  const pairRows = await db
-    .select({
-      senderNickname: giftRecord.senderNickname,
-      playerId: giftRecord.playerId,
-      playerName: user.name,
-      totalCents: sql<number>`SUM(${giftRecord.totalCents})`.mapWith(Number),
-      giftCount: sql<number>`COUNT(*)`.mapWith(Number),
-    })
-    .from(giftRecord)
-    .innerJoin(user, eq(user.id, giftRecord.playerId))
-    .where(where)
-    .groupBy(giftRecord.senderNickname, giftRecord.playerId, user.name)
-    .orderBy(sql`SUM(${giftRecord.totalCents}) DESC`)
-    .limit(100);
+  // 陪玩:保留完整排名以便计算名次,但把别人的金额清零(只看自己的到手/总额)
+  const players = isManager
+    ? playerRows
+    : playerRows.map((p) =>
+        p.playerId === me.id
+          ? p
+          : { ...p, totalCents: 0, earnCents: 0 }
+      );
 
-  return { senders: senderRows, players: playerRows, pairs: pairRows };
+  const pairRows = isManager
+    ? await db
+        .select({
+          senderNickname: giftRecord.senderNickname,
+          playerId: giftRecord.playerId,
+          playerName: user.name,
+          totalCents: sql<number>`SUM(${giftRecord.totalCents})`.mapWith(Number),
+          giftCount: sql<number>`COUNT(*)`.mapWith(Number),
+        })
+        .from(giftRecord)
+        .innerJoin(user, eq(user.id, giftRecord.playerId))
+        .where(where)
+        .groupBy(giftRecord.senderNickname, giftRecord.playerId, user.name)
+        .orderBy(sql`SUM(${giftRecord.totalCents}) DESC`)
+        .limit(100)
+    : [];
+
+  return { senders: senderRows, players, pairs: pairRows, isManager };
 }

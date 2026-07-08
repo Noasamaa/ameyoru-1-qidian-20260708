@@ -9,51 +9,104 @@ import { EmptyState } from "@/components/empty-state";
 import { ClipboardList } from "lucide-react";
 import { formatRelativeDateTime } from "@/lib/format";
 
-const ACTION_LABEL: Record<string, string> = {
+/**
+ * 审计日志动作码。这是「写入端」的真实来源——所有取值由
+ * src/server/actions/*.ts 中 `logAudit({ action: ... })` 实际发出的字面量
+ * 决定(含三元分支的两端)。新增/删除动作码时,务必同步本联合类型与下方两张
+ * 映射表(TS 会在缺漏时报错,因为两表均为 Record<AuditAction, ...>)。
+ */
+type AuditAction =
+  // orders.ts
+  | "CREATE_ORDER"
+  | "COMPLETE_ORDER"
+  | "ADJUST_ORDER_DURATION"
+  | "CANCEL_ORDER"
+  | "SETTLE_ORDER"
+  | "UNSETTLE_ORDER"
+  | "BATCH_SETTLE"
+  // users.ts
+  | "CREATE_PLAYER"
+  | "ENABLE_USER"
+  | "DISABLE_USER"
+  | "MARK_DEPOSIT_PAID"
+  | "MARK_DEPOSIT_UNPAID"
+  // announcements.ts
+  | "CREATE_ANNOUNCEMENT"
+  | "UPDATE_ANNOUNCEMENT"
+  | "DELETE_ANNOUNCEMENT"
+  | "ENABLE_ANNOUNCEMENT"
+  | "DISABLE_ANNOUNCEMENT"
+  // gifts.ts
+  | "CREATE_GIFT_RECORD"
+  | "CREATE_GIFT_REPORT"
+  | "UPDATE_GIFT_RECORD"
+  | "DELETE_GIFT_RECORD"
+  | "SETTLE_GIFT"
+  | "UNSETTLE_GIFT";
+
+/** Badge 组件真实支持的 variant 联合(见 src/components/ui/badge.tsx) */
+type BadgeVariant =
+  | "default"
+  | "secondary"
+  | "destructive"
+  | "success"
+  | "warning"
+  | "outline";
+
+const ACTION_LABEL: Record<AuditAction, string> = {
   CREATE_ORDER: "创建订单",
   COMPLETE_ORDER: "标记完成",
+  ADJUST_ORDER_DURATION: "调整时长",
+  CANCEL_ORDER: "取消订单",
   SETTLE_ORDER: "结算",
   UNSETTLE_ORDER: "撤销结算",
-  CANCEL_ORDER: "取消订单",
-  CREATE_USER: "创建账号",
-  UPDATE_USER: "修改账号",
-  TOGGLE_USER: "启用/停用",
+  BATCH_SETTLE: "批量结算",
+  CREATE_PLAYER: "创建陪玩",
+  ENABLE_USER: "启用用户",
+  DISABLE_USER: "停用用户",
+  MARK_DEPOSIT_PAID: "标记已缴押金",
+  MARK_DEPOSIT_UNPAID: "取消押金标记",
   CREATE_ANNOUNCEMENT: "创建公告",
   UPDATE_ANNOUNCEMENT: "修改公告",
   DELETE_ANNOUNCEMENT: "删除公告",
-  TOGGLE_ANNOUNCEMENT: "切换公告",
-  CREATE_PLAYER: "创建陪玩",
-  ENABLE_USER: "启用用户",
-  DISABLE_USER: "停用用户",
-  BATCH_SETTLE: "批量结算",
-  ADJUST_ORDER_DURATION: "调整时长",
-  MARK_DEPOSIT_PAID: "标记已缴押金",
-  MARK_DEPOSIT_UNPAID: "取消押金标记",
-  CREATE_PLAYER_INVITE: "创建邀请链接",
-  DELETE_PLAYER_INVITE: "删除邀请链接",
   ENABLE_ANNOUNCEMENT: "启用公告",
   DISABLE_ANNOUNCEMENT: "禁用公告",
   CREATE_GIFT_RECORD: "添加礼物记录",
+  CREATE_GIFT_REPORT: "上报礼物",
   UPDATE_GIFT_RECORD: "修改礼物记录",
   DELETE_GIFT_RECORD: "删除礼物记录",
+  SETTLE_GIFT: "礼物结算",
+  UNSETTLE_GIFT: "撤销礼物结算",
 };
 
-const ACTION_COLOR: Record<string, string> = {
+const ACTION_COLOR: Record<AuditAction, BadgeVariant> = {
+  // 创建 / 启用 / 正向操作
   CREATE_ORDER: "default",
+  CREATE_PLAYER: "default",
+  ENABLE_USER: "default",
+  MARK_DEPOSIT_PAID: "default",
+  CREATE_ANNOUNCEMENT: "default",
+  ENABLE_ANNOUNCEMENT: "default",
+  CREATE_GIFT_RECORD: "default",
+  CREATE_GIFT_REPORT: "default",
+  // 结算 / 完成
   COMPLETE_ORDER: "secondary",
-  SETTLE_ORDER: "default",
+  SETTLE_ORDER: "secondary",
+  BATCH_SETTLE: "secondary",
+  SETTLE_GIFT: "secondary",
+  // 删除 / 取消 / 停用(破坏性)
   CANCEL_ORDER: "destructive",
+  DISABLE_USER: "destructive",
+  DELETE_ANNOUNCEMENT: "destructive",
+  DISABLE_ANNOUNCEMENT: "destructive",
+  DELETE_GIFT_RECORD: "destructive",
+  // 修改 / 撤销 / 中性
+  ADJUST_ORDER_DURATION: "outline",
   UNSETTLE_ORDER: "outline",
-  CREATE_PLAYER: "创建陪玩",
-  ENABLE_USER: "启用用户",
-  DISABLE_USER: "停用用户",
-  BATCH_SETTLE: "批量结算",
-  ADJUST_ORDER_DURATION: "调整时长",
-  MARK_DEPOSIT_PAID: "标记已缴押金",
-  MARK_DEPOSIT_UNPAID: "取消押金标记",
-  CREATE_PLAYER_INVITE: "创建邀请链接",
-  DELETE_PLAYER_INVITE: "删除邀请链接",
-  ENABLE_ANNOUNCEMENT: "启用公告",
+  MARK_DEPOSIT_UNPAID: "outline",
+  UPDATE_ANNOUNCEMENT: "outline",
+  UPDATE_GIFT_RECORD: "outline",
+  UNSETTLE_GIFT: "outline",
 };
 
 export default async function AuditLogPage() {
@@ -76,13 +129,16 @@ export default async function AuditLogPage() {
             {logs.map((log) => {
               let detail: Record<string, unknown> = {};
               try { detail = log.detail ? JSON.parse(log.detail) : {}; } catch {}
+              // log.action 来自 DB,类型为 string;用作 key 时按 AuditAction 索引,
+              // 配合 ?? 回退兜底未知/历史动作码,无需对结果做不安全的 as 断言。
+              const action = log.action as AuditAction;
               return (
                 <li key={log.id} className="flex items-start gap-3 px-4 py-3">
                   <div className="min-w-0 flex-1">
                     <div className="flex items-center gap-2 flex-wrap">
                       <span className="font-medium">{log.actorName}</span>
-                      <Badge variant={(ACTION_COLOR[log.action] as "default" | "secondary" | "destructive" | "outline") ?? "outline"} className="text-[10px]">
-                        {ACTION_LABEL[log.action] ?? log.action}
+                      <Badge variant={ACTION_COLOR[action] ?? "outline"} className="text-[10px]">
+                        {ACTION_LABEL[action] ?? log.action}
                       </Badge>
                       {log.targetId && (
                         <span className="text-muted-foreground font-mono text-[10px]">{log.targetId.slice(0, 8)}…</span>

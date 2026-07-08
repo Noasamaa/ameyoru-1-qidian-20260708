@@ -24,6 +24,19 @@ function webhookUrl(): string | null {
   return u && u.startsWith("http") ? u : null;
 }
 
+/**
+ * 转义用户可控字段(客户名 / 派单人 / 操作人),
+ * 防止把 markdown 控制字符或换行注入到推送正文里(消息注入)。
+ * - 换行 / 回车 / 制表符 → 空格(防止伪造新的 > 引用行)
+ * - markdown / html 控制字符 → 加反斜杠转义
+ */
+function escMd(s: string): string {
+  return String(s ?? "")
+    .replace(/[\r\n\t]+/g, " ")
+    .replace(/[\\`*_#>~\[\]()<&]/g, "\\$&")
+    .trim();
+}
+
 async function pushMarkdown(content: string): Promise<void> {
   const url = webhookUrl();
   if (!url) return;
@@ -58,8 +71,8 @@ export function notifyOrderCreated(opts: {
       ? `\n> 优惠:<font color="warning">${formatYuan(opts.discountCents)}</font>`
       : "";
   void pushMarkdown(
-    `**【新${verb}】${opts.dispatcherName}**
-> 客户:${opts.customerName}
+    `**【新${verb}】${escMd(opts.dispatcherName)}**
+> 客户:${escMd(opts.customerName)}
 > 时长:${formatDuration(opts.durationMin)}
 > 实付:<font color="info">${formatYuan(opts.payableCents)}</font>${discountLine}`
   );
@@ -71,7 +84,7 @@ export function notifyOrderCompleted(opts: {
   playerEarnCents: number;
 }): void {
   void pushMarkdown(
-    `**【订单完成】${opts.actorName}**
+    `**【订单完成】${escMd(opts.actorName)}**
 > 实付:${formatYuan(opts.payableCents)}
 > 陪玩应得:<font color="info">${formatYuan(opts.playerEarnCents)}</font>(待结算)`
   );
@@ -84,7 +97,7 @@ export function notifyOrderSettled(opts: {
 }): void {
   const method = opts.paidMethod ? payMethodLabel[opts.paidMethod] : "线下";
   void pushMarkdown(
-    `**【已打款】${opts.actorName}**
+    `**【已打款】${escMd(opts.actorName)}**
 > 方式:${method}
 > 金额:<font color="info">${formatYuan(opts.playerEarnCents)}</font>`
   );
@@ -101,8 +114,8 @@ export function notifyOrderCanceled(opts: {
       ? `\n> 陪玩补偿:<font color="warning">${formatYuan(opts.compensationCents)}</font>(待结算)`
       : "";
   void pushMarkdown(
-    `**【订单取消】${opts.actorName}**
-> 客户:${opts.customerName}
+    `**【订单取消】${escMd(opts.actorName)}**
+> 客户:${escMd(opts.customerName)}
 > 责任方:${faultLabel[opts.fault]}${compLine}`
   );
 }

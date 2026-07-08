@@ -121,6 +121,11 @@ export default async function ProfilePage() {
                   ? "上传后,老板在订单详情可直接扫码打款。更换或删除需要收款码安全码。最大 20MB,支持常见图片格式"
                   : "请先上传微信或支付宝收款码,否则老板只能线下确认打款。更换或删除需要收款码安全码。最大 20MB,支持常见图片格式"}
               </p>
+              {!hasQrCode && (
+                <p className="mt-2 text-base font-bold text-red-600">
+                  如无法上传收款码，请设置/修改安全码
+                </p>
+              )}
             </div>
             <QrUploadSection
               wechatPath={profile.wechatQrPath}

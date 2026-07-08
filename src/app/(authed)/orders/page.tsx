@@ -188,7 +188,6 @@ export default async function OrdersPage({
 
       <OrdersList
         role={me.role}
-        myId={me.id}
         initialOpenId={initialOpenId}
         currentTab={tab}
         searchQuery={q}

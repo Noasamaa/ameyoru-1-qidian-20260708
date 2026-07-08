@@ -1,3 +1,5 @@
+// Structure smoke-check (static grep), NOT a behavioral test.
+// 仅对源码文本做正则断言,确认陪玩邀请 / 客户字段相关代码存在;不执行任何业务逻辑。
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
@@ -24,7 +26,7 @@ const packageJson = read("package.json");
 
 assert.doesNotMatch(schema, /name:\s*text\("name"\)\.notNull\(\)\.unique\(\)/);
 assert.match(schema, /customer_wechat_idx/);
-assert.match(schema, /playerInvite\s*=\s*sqliteTable\(\s*"player_invite"/);
+assert.match(schema, /playerInvite\s*=\s*mysqlTable\(\s*"player_invite"/);
 assert.match(schema, /inviteToken/);
 assert.match(schema, /expiresAt/);
 assert.match(schema, /usedAt/);

@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState, useTransition } from "react";
+import { useEffect, useMemo, useRef, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 import { Gift, Sparkles, Plus, Pencil, Trash2, Clock, CheckCircle2 } from "lucide-react";
@@ -12,6 +12,7 @@ import { Label } from "@/components/ui/label";
 import {
   Dialog,
   DialogContent,
+  DialogDescription,
   DialogHeader,
   DialogTitle,
   DialogFooter,
@@ -26,6 +27,7 @@ import { cn } from "@/lib/utils";
 import {
   upsertGiftRecordAction,
   deleteGiftRecordAction,
+  markGiftsReadAction,
   type UpsertGiftRecordInput,
 } from "@/server/actions/gifts";
 
@@ -93,10 +95,27 @@ export function MyGiftsClient({ records, unread, myId }: Props) {
   });
   const [pending, startTransition] = useTransition();
   const [tab, setTab] = useState<"all" | "pending" | "settled">("all");
+  const markedKeyRef = useRef<string | null>(null);
+  // 快照当前未读列表,标记已读后 router.refresh() 会把 unread 清空,
+  // 弹窗仍展示这批礼物,避免内容闪成"0 笔"。
+  const [popupItems, setPopupItems] = useState(unread);
 
   useEffect(() => {
-    if (unread.length > 0) setPopupOpen(true);
-  }, [unread.length]);
+    if (unread.length === 0) return;
+    const unreadKey = unread.map((item) => item.id).join(",");
+    setPopupItems(unread);
+    setPopupOpen(true);
+    // 弹窗展示后再标记已读(不在渲染期间写库)。按未读 id 集合去重,
+    // React StrictMode 双调用或重复刷新都不会重复请求同一批记录。
+    if (markedKeyRef.current === unreadKey) return;
+    markedKeyRef.current = unreadKey;
+    void markGiftsReadAction()
+      .then(() => {
+        // 已读标记推进后刷新,清掉导航栏「礼物收入」未读徽标
+        router.refresh();
+      })
+      .catch(() => {});
+  }, [unread, router]);
 
   const preview = useMemo(() => {
     const total = form.giftTierCents * form.quantity;
@@ -347,6 +366,9 @@ export function MyGiftsClient({ records, unread, myId }: Props) {
         <DialogContent>
           <DialogHeader>
             <DialogTitle>{editing ? "编辑报单" : "新增礼物报单"}</DialogTitle>
+            <DialogDescription className="sr-only">
+              选择礼物档位、数量与打赏人昵称,提交后等待管理员支付
+            </DialogDescription>
           </DialogHeader>
           <div className="space-y-4">
             <div>
@@ -443,11 +465,14 @@ export function MyGiftsClient({ records, unread, myId }: Props) {
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2">
               <Sparkles className="size-5 text-pink-500" />
-              收到 {unread.length} 笔新礼物 💝
+              收到 {popupItems.length} 笔新礼物 💝
             </DialogTitle>
+            <DialogDescription className="sr-only">
+              以下是管理员已支付、你新收到的礼物打赏明细
+            </DialogDescription>
           </DialogHeader>
           <div className="space-y-2 max-h-[60vh] overflow-y-auto">
-            {unread.map((u) => {
+            {popupItems.map((u) => {
               const tier = GIFT_TIER_LABELS[u.giftTierCents] ?? u.giftTierCents / 100;
               return (
                 <Card key={u.id} className="bg-pink-50/50 p-3 dark:bg-pink-950/20">

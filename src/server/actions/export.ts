@@ -11,7 +11,15 @@ import { requireSession } from "@/lib/auth-helpers";
 import { centsToYuanString, formatDateTime, formatDuration } from "@/lib/format";
 
 function toCSV(headers: string[], rows: string[][]): string {
-  const escape = (v: string) => `"${v.replace(/"/g, '""')}"`;
+  const escape = (v: string) => {
+    let s = String(v ?? "");
+    // 防 CSV 公式注入:Excel/WPS/Sheets 里以 = + - @ TAB CR 开头的单元格会被当公式执行。
+    // 在前面加单引号,使其退化成纯文本。
+    if (/^[=+\-@\t\r]/.test(s)) {
+      s = `'${s}`;
+    }
+    return `"${s.replace(/"/g, '""')}"`;
+  };
   return [headers, ...rows].map((r) => r.map(escape).join(",")).join("\n");
 }
 
@@ -21,7 +29,7 @@ export async function exportOrdersCSV(opts: {
   dateFrom?: string;
   dateTo?: string;
 }) {
-  const { user: _me } = await requireSession({ role: ["BOSS", "STAFF"] });
+  await requireSession({ role: ["BOSS", "STAFF"] });
 
   const dispatcherUser = aliasedTable(user, "dispatcher");
   const conditions: ReturnType<typeof eq>[] = [];

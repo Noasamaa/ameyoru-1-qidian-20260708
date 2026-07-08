@@ -1,3 +1,5 @@
+// Structure smoke-check (static grep), NOT a behavioral test.
+// 仅对源码文本做正则断言,确认各项安全加固代码(鉴权/校验/上传嗅探等)存在;不执行任何业务逻辑。
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
@@ -25,9 +27,9 @@ assert.match(middleware, /searchParams\.has\("inactive"\)/);
 assert.match(usersAction, /const\s+\{\s*user:\s*me\s*\}\s*=\s*await requireSession/);
 assert.match(usersAction, /input\.id === me\.id/);
 assert.match(usersAction, /target\.role === "BOSS"/);
-assert.match(usersAction, /isNull\(playerInvite\.usedAt\)/);
-assert.match(usersAction, /reserveInviteUse/);
-assert.match(usersAction, /returning\(\{\s*id:\s*playerInvite\.id\s*\}\)/);
+assert.match(usersAction, /useCount:\s*sql`\$\{playerInvite\.useCount\} \+ 1`/);
+assert.match(usersAction, /lt\(playerInvite\.useCount,\s*playerInvite\.maxUses\)/);
+assert.match(usersAction, /affectedRows !== 1/);
 
 assert.match(ordersAction, /selectedPlayer/);
 assert.match(ordersAction, /eq\(user\.role,\s*"PLAYER"\)/);

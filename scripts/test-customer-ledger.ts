@@ -1,3 +1,5 @@
+// Structure smoke-check (static grep), NOT a behavioral test.
+// 仅对源码文本做正则断言,确认客户流水(ledger)相关代码存在;不执行任何业务逻辑。
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";

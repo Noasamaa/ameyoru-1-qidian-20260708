@@ -260,10 +260,12 @@ export function PlayersClient({
             onCreated={(c) => setCredentialDialog(c)}
           />
           <EditPlayerDialog
+            key={editingPlayer?.id}
             player={editingPlayer}
             onClose={() => setEditingPlayer(null)}
           />
           <ResetQrSecurityCodeDialog
+            key={securityCodePlayer?.id}
             player={securityCodePlayer}
             onClose={() => setSecurityCodePlayer(null)}
           />

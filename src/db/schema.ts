@@ -7,6 +7,7 @@ import {
   datetime,
   mysqlEnum,
   index,
+  unique,
 } from "drizzle-orm/mysql-core";
 import { sql } from "drizzle-orm";
 
@@ -232,6 +233,8 @@ export const order = mysqlTable(
     index("order_player_idx").on(t.playerId, t.startAt),
     index("order_dispatcher_idx").on(t.dispatcherId),
     index("order_status_idx").on(t.orderStatus, t.settleStatus),
+    // 排行榜/统计的主查询: 按 order_status 过滤 + start_at 范围,覆盖此组合
+    index("order_status_start_idx").on(t.orderStatus, t.startAt),
     index("order_customer_idx").on(t.customerId),
     index("order_start_at_idx").on(t.startAt),
   ]
@@ -286,6 +289,8 @@ export const customerBalanceTxnPlayer = mysqlTable(
   (t) => [
     index("cbtp_txn_idx").on(t.txnId),
     index("cbtp_player_idx").on(t.playerId),
+    // 防御性: 一笔扣减关联同一陪玩只应出现一次
+    unique("cbtp_txn_player_unique").on(t.txnId, t.playerId),
   ]
 );
 
