@@ -12,7 +12,7 @@ export default async function CustomersPage({
 }: {
   searchParams: Promise<{ q?: string }>;
 }) {
-  await requireSession({ role: ["BOSS", "STAFF"] });
+  await requireSession({ role: ["BOSS", "STAFF", "SERVICE"] });
   const { q = "" } = await searchParams;
 
   const [rows, players] = await Promise.all([
