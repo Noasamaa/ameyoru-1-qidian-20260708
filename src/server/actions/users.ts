@@ -256,6 +256,24 @@ export async function createStaffAction(
   return res;
 }
 
+export async function createServiceAction(
+  input: z.infer<typeof createStaffSchema>
+): Promise<CreateResult> {
+  // 仅 BOSS 可创建客服账号
+  await requireSession({ role: "BOSS" });
+  const parsed = createStaffSchema.safeParse(input);
+  if (!parsed.success) {
+    return { ok: false, error: parsed.error.errors[0]?.message ?? "参数错误" };
+  }
+  const res = await createUser({
+    username: parsed.data.username,
+    displayName: parsed.data.displayName,
+    role: "SERVICE",
+  });
+  if (res.ok) revalidatePath("/staff");
+  return res;
+}
+
 export async function toggleUserActiveAction(input: {
   id: string;
   active: boolean;

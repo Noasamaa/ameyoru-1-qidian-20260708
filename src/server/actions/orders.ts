@@ -268,7 +268,7 @@ export async function createOrderAction(input: CreateOrderInput) {
 }
 
 export async function completeOrderAction(input: { id: string }) {
-  const { user: me } = await requireSession({ role: ["BOSS", "STAFF"] });
+  const { user: me } = await requireSession({ role: ["BOSS", "STAFF", "SERVICE"] });
   const [target] = await db
     .select({
       playerId: order.playerId,
@@ -402,7 +402,7 @@ const cancelSchema = z.object({
 export type CancelOrderInput = z.input<typeof cancelSchema>;
 
 export async function cancelOrderAction(input: CancelOrderInput) {
-  const { user: me } = await requireSession({ role: ["BOSS", "STAFF"] });
+  const { user: me } = await requireSession({ role: ["BOSS", "STAFF", "SERVICE"] });
   const parsed = cancelSchema.safeParse(input);
   if (!parsed.success) {
     return {

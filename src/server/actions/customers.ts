@@ -57,7 +57,7 @@ const mergeSchema = z.object({
 });
 
 export async function updateCustomerAction(input: z.infer<typeof updateSchema>) {
-  await requireSession({ role: ["BOSS", "STAFF"] });
+  await requireSession({ role: ["BOSS", "STAFF", "SERVICE"] });
   const parsed = updateSchema.safeParse(input);
   if (!parsed.success) {
     return {
@@ -80,7 +80,7 @@ export async function updateCustomerAction(input: z.infer<typeof updateSchema>) 
 export async function addCustomerDepositAction(
   input: z.infer<typeof depositSchema>
 ) {
-  const { user: me } = await requireSession({ role: ["BOSS", "STAFF"] });
+  const { user: me } = await requireSession({ role: ["BOSS", "STAFF", "SERVICE"] });
   const parsed = depositSchema.safeParse(input);
   if (!parsed.success) {
     return {
@@ -125,7 +125,7 @@ export async function addCustomerDepositAction(
 export async function deductCustomerBalanceAction(
   input: z.infer<typeof deductSchema>
 ) {
-  const { user: me } = await requireSession({ role: ["BOSS", "STAFF"] });
+  const { user: me } = await requireSession({ role: ["BOSS", "STAFF", "SERVICE"] });
   const parsed = deductSchema.safeParse(input);
   if (!parsed.success) {
     return {
