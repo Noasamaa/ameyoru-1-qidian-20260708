@@ -123,7 +123,7 @@ export default async function ProfilePage() {
               </p>
               {!hasQrCode && (
                 <p className="mt-2 text-base font-bold text-red-600">
-                  如无法上传收款码，请设置/修改安全码
+                  如无法上传收款码，请填写收款安全码，微信支付宝都需要
                 </p>
               )}
             </div>
