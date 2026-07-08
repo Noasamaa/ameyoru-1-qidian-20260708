@@ -15,7 +15,8 @@ import { QrUploadSection } from "./qr-upload-section";
 
 const roleLabel: Record<Role, string> = {
   BOSS: "店主",
-  STAFF: "员工",
+  STAFF: "店长",
+  SERVICE: "客服",
   PLAYER: "陪玩",
 };
 

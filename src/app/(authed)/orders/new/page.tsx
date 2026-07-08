@@ -8,7 +8,7 @@ import type { PlayerGender } from "@/db/schema";
 
 export default async function NewOrderPage() {
   const { user: me } = await requireSession();
-  const isManager = me.role === "BOSS" || me.role === "STAFF";
+  const isManager = me.role === "BOSS" || me.role === "STAFF" || me.role === "SERVICE";
 
   let players: {
     id: string;

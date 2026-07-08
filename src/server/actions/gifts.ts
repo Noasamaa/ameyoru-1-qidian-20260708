@@ -61,7 +61,7 @@ function invalidate() {
  */
 export async function upsertGiftRecordAction(input: UpsertGiftRecordInput) {
   const { user: me } = await requireSession();
-  const isManager = me.role === "BOSS" || me.role === "STAFF";
+  const isManager = me.role === "BOSS" || me.role === "STAFF" || me.role === "SERVICE";
   if (!isManager && me.role !== "PLAYER") {
     return { ok: false as const, error: "无权限" };
   }
@@ -182,7 +182,7 @@ export async function upsertGiftRecordAction(input: UpsertGiftRecordInput) {
 
 export async function deleteGiftRecordAction(input: { id: string }) {
   const { user: me } = await requireSession();
-  const isManager = me.role === "BOSS" || me.role === "STAFF";
+  const isManager = me.role === "BOSS" || me.role === "STAFF" || me.role === "SERVICE";
   if (!isManager && me.role !== "PLAYER") {
     return { ok: false as const, error: "无权限" };
   }
@@ -310,7 +310,7 @@ export async function unsettleGiftAction(input: { id: string }) {
 }
 
 export async function listGiftRecords(filter: ListGiftRecordFilter) {
-  await requireSession({ role: ["BOSS", "STAFF"] });
+  await requireSession({ role: ["BOSS", "STAFF", "SERVICE"] });
   const f = listFilterSchema.parse(filter);
 
   const conds = [];
@@ -388,7 +388,7 @@ export async function listGiftRecords(filter: ListGiftRecordFilter) {
 }
 
 export async function listPlayersForGift() {
-  await requireSession({ role: ["BOSS", "STAFF"] });
+  await requireSession({ role: ["BOSS", "STAFF", "SERVICE"] });
   return db
     .select({
       id: user.id,
@@ -530,7 +530,7 @@ const rangeSchema = z.enum(["today", "week", "month", "all"]).default("all");
  */
 export async function giftLeaderboard(range: "today" | "week" | "month" | "all" = "all") {
   const { user: me } = await requireSession();
-  const isManager = me.role === "BOSS" || me.role === "STAFF";
+  const isManager = me.role === "BOSS" || me.role === "STAFF" || me.role === "SERVICE";
   const r = rangeSchema.parse(range);
 
   const baseConds = [eq(giftRecord.settleStatus, "SETTLED")];

@@ -145,32 +145,45 @@ async function createUser(opts: {
   const initialPassword = password ?? generateInitialPassword();
 
   try {
-    await auth.api.signUpEmail({
-      body: {
-        email: `${nanoid(12)}@${INTERNAL_EMAIL_DOMAIN}`,
-        password: initialPassword,
-        name: displayName,
-        username,
-      },
+    // 直接用 better-auth 内部适配器创建用户,绕过 disableSignUp 限制。
+    // auth.api.signUpEmail 受 disableSignUp: true 影响会拒绝调用,
+    // 但 internalAdapter 不经过 HTTP 端点检查。
+    const ctx = await auth.$context;
+    const fakeEmail = `${nanoid(12)}@${INTERNAL_EMAIL_DOMAIN}`;
+    const createdUser = await ctx.internalAdapter.createUser({
+      email: fakeEmail,
+      name: displayName,
+      username,
+      emailVerified: true,
     });
+    if (!createdUser) {
+      return { ok: false, error: "创建用户失败" };
+    }
+    const hash = await ctx.password.hash(initialPassword);
+    await ctx.internalAdapter.linkAccount({
+      userId: createdUser.id,
+      providerId: "credential",
+      accountId: createdUser.id,
+      password: hash,
+    });
+
+    // role / 业务字段只能事后 update(additionalFields input:false)
+    await db
+      .update(user)
+      .set({
+        role,
+        defaultRateCents: defaultRateCents ?? null,
+        playerGender: playerGender ?? null,
+        mustChangePwd,
+        qrSecurityCodeHash: qrSecurityCodeHash ?? null,
+      })
+      .where(eq(user.id, createdUser.id));
   } catch (e) {
     return {
       ok: false,
       error: e instanceof Error ? e.message : "创建失败",
     };
   }
-
-  // role 默认为 PLAYER;additionalFields input:false 不能由 API 设,这里 update
-  await db
-    .update(user)
-    .set({
-      role,
-      defaultRateCents: defaultRateCents ?? null,
-      playerGender: playerGender ?? null,
-      mustChangePwd,
-      qrSecurityCodeHash: qrSecurityCodeHash ?? null,
-    })
-    .where(eq(user.username, username));
 
   return { ok: true, initialPassword, username, displayName };
 }
@@ -251,6 +264,24 @@ export async function createStaffAction(
     username: parsed.data.username,
     displayName: parsed.data.displayName,
     role: "STAFF",
+  });
+  if (res.ok) revalidatePath("/staff");
+  return res;
+}
+
+export async function createServiceAction(
+  input: z.infer<typeof createStaffSchema>
+): Promise<CreateResult> {
+  // 仅 BOSS 可创建客服账号
+  await requireSession({ role: "BOSS" });
+  const parsed = createStaffSchema.safeParse(input);
+  if (!parsed.success) {
+    return { ok: false, error: parsed.error.errors[0]?.message ?? "参数错误" };
+  }
+  const res = await createUser({
+    username: parsed.data.username,
+    displayName: parsed.data.displayName,
+    role: "SERVICE",
   });
   if (res.ok) revalidatePath("/staff");
   return res;

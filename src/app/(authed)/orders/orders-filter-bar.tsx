@@ -7,15 +7,18 @@ import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 
+import type { Role } from "@/db/schema";
+
 interface OrdersFilterBarProps {
   q: string;
   tab: string;
   dateFrom: string;
   dateTo: string;
   isManager: boolean;
+  role?: Role;
 }
 
-export function OrdersFilterBar({ q, tab, dateFrom, dateTo, isManager }: OrdersFilterBarProps) {
+export function OrdersFilterBar({ q, tab, dateFrom, dateTo, isManager, role }: OrdersFilterBarProps) {
   const router = useRouter();
   const [, startTransition] = useTransition();
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -63,8 +66,8 @@ export function OrdersFilterBar({ q, tab, dateFrom, dateTo, isManager }: OrdersF
         <TabsList>
           <TabsTrigger value="PENDING_SETTLE">待结算</TabsTrigger>
           <TabsTrigger value="IN_PROGRESS">进行中</TabsTrigger>
-          <TabsTrigger value="SETTLED">已结算</TabsTrigger>
-          <TabsTrigger value="all">全部</TabsTrigger>
+          {role !== "SERVICE" && <TabsTrigger value="SETTLED">已结算</TabsTrigger>}
+          {role !== "SERVICE" && <TabsTrigger value="all">全部</TabsTrigger>}
         </TabsList>
       </Tabs>
 

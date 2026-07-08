@@ -29,7 +29,7 @@ interface Item {
   createdAt: string;
 }
 
-export function AnnouncementsClient({ items }: { items: Item[] }) {
+export function AnnouncementsClient({ items, canEdit = true }: { items: Item[]; canEdit?: boolean }) {
   const router = useRouter();
   const [pending, startTransition] = useTransition();
   const [editItem, setEditItem] = useState<Item | null>(null);
@@ -78,7 +78,7 @@ export function AnnouncementsClient({ items }: { items: Item[] }) {
   return (
     <>
       <PageHeader title="公告管理" description="管理首页公告和活动" action={
-<Button onClick={openNew}><Plus className="size-4" /> 新增</Button>
+canEdit ? <Button onClick={openNew}><Plus className="size-4" /> 新增</Button> : undefined
 } />
 
       {items.length === 0 ? (
@@ -103,6 +103,7 @@ export function AnnouncementsClient({ items }: { items: Item[] }) {
                   {item.endAt && <> · 结束: {formatDate(item.endAt)}</>}
                 </div>
               </div>
+              {canEdit && (
               <div className="flex gap-1 shrink-0">
                 <Button size="icon" variant="ghost" onClick={() => openEdit(item)}><Pencil className="size-4" /></Button>
                 <Button size="icon" variant="ghost" onClick={() => toggle(item.id, !item.enabled)}>
@@ -110,6 +111,7 @@ export function AnnouncementsClient({ items }: { items: Item[] }) {
                 </Button>
                 <Button size="icon" variant="ghost" className="text-destructive" onClick={() => remove(item.id)}><Trash2 className="size-4" /></Button>
               </div>
+              )}
             </Card>
           ))}
         </div>
