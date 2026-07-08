@@ -7,7 +7,7 @@ import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { EmptyState } from "@/components/empty-state";
 import { ClipboardList } from "lucide-react";
-import { formatRelativeDateTime } from "@/lib/format";
+import { formatRelativeDateTime, formatYuan, formatDuration } from "@/lib/format";
 
 /**
  * 审计日志动作码。这是「写入端」的真实来源——所有取值由
@@ -109,6 +109,39 @@ const ACTION_COLOR: Record<AuditAction, BadgeVariant> = {
   UNSETTLE_GIFT: "outline",
 };
 
+const DETAIL_LABEL: Record<string, string> = {
+  orderType: "订单类型",
+  playerName: "陪玩",
+  customerName: "客户",
+  username: "用户名",
+  displayName: "显示名",
+  title: "标题",
+  tier: "档位",
+  quantity: "数量",
+  sender: "送礼人",
+  note: "备注",
+  count: "数量",
+};
+
+const VALUE_MAP: Record<string, Record<string, string>> = {
+  orderType: { NORMAL: "普通单", REST: "休息单" },
+  fault: { PLAYER: "陪玩", CUSTOMER: "客户", SHOP: "店铺", OTHER: "其他" },
+  paidMethod: { WECHAT: "微信", ALIPAY: "支付宝" },
+  type: { NOTICE: "公告", ACTIVITY: "活动" },
+};
+
+const CENTS_FIELDS: Record<string, string> = { payableCents: "实付", playerEarnCents: "应得", compensationCents: "补偿", amount: "金额" };
+const MINUTES_FIELDS = new Set(["durationMin", "extraMinutes"]);
+
+function formatDetail(k: string, v: unknown): string {
+  const sv = String(v);
+  if (VALUE_MAP[k]) return `${DETAIL_LABEL[k] ?? k}: ${VALUE_MAP[k][sv] ?? sv}`;
+  if (CENTS_FIELDS[k]) return `${CENTS_FIELDS[k]}: ${formatYuan(Number(v))}`;
+  if (MINUTES_FIELDS.has(k)) return `时长: ${formatDuration(Number(v))}`;
+  return `${DETAIL_LABEL[k] ?? k}: ${sv}`;
+}
+
+
 export default async function AuditLogPage() {
   await requireSession({ role: ["BOSS"] });
 
@@ -146,7 +179,7 @@ export default async function AuditLogPage() {
                     </div>
                     {Object.keys(detail).length > 0 && (
                       <p className="text-xs text-muted-foreground mt-0.5">
-                        {Object.entries(detail).map(([k, v]) => `${k}: ${v}`).join(" · ")}
+                        {Object.entries(detail).map(([k, v]) => formatDetail(k, v)).join(" · ")}
                       </p>
                     )}
                   </div>

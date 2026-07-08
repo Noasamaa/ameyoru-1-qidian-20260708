@@ -123,7 +123,7 @@ export async function createOrderAction(input: CreateOrderInput) {
   }
 
   const [selectedPlayer] = await db
-    .select({ id: user.id })
+    .select({ id: user.id, name: user.name })
     .from(user)
     .where(
       and(eq(user.id, playerId), eq(user.role, "PLAYER"), eq(user.active, true))
@@ -256,7 +256,7 @@ export async function createOrderAction(input: CreateOrderInput) {
     discountCents: computed.discountCents,
     isSelfReport: me.role === "PLAYER",
   });
-  logAudit({ actorId: me.id, actorName: me.name, action: "CREATE_ORDER", targetType: "order", targetId: id, detail: { customerName: customerRec.name, payableCents: computed.payableCents } });
+  logAudit({ actorId: me.id, actorName: me.name, action: "CREATE_ORDER", targetType: "order", targetId: id, detail: { customerName: customerRec.name, playerName: selectedPlayer.name, durationMin: computed.durationMin, payableCents: computed.payableCents, playerEarnCents: computed.playerEarnCents } });
 
   return {
     ok: true as const,
