@@ -118,7 +118,7 @@ function QrSlot({
         type="password"
         value={securityCode}
         onChange={(e) => setSecurityCode(e.target.value)}
-        placeholder="收款码安全码"
+        placeholder="请在这里输入收款安全码才能够上传收款码图片"
         disabled={pending || disabled}
       />
 
