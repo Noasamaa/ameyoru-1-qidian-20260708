@@ -174,6 +174,10 @@ export const order = mysqlTable(
       .notNull()
       .references(() => customer.id),
 
+    orderType: mysqlEnum("order_type", ["NORMAL", "REST"])
+      .notNull()
+      .default("NORMAL"),
+
     startAt: ts("start_at").notNull(),
     endAt: ts("end_at").notNull(),
     durationMin: int("duration_min").notNull(),
@@ -302,6 +306,7 @@ export const customerBalanceTxnPlayer = mysqlTable(
 
 export type Role = "BOSS" | "STAFF" | "SERVICE" | "PLAYER";
 export type PlayerGender = "MALE" | "FEMALE";
+export type OrderType = "NORMAL" | "REST";
 export type OrderStatus = "IN_PROGRESS" | "COMPLETED" | "CANCELED";
 export type SettleStatus = "UNSETTLED" | "SETTLED";
 export type PayMethod = "WECHAT" | "ALIPAY";

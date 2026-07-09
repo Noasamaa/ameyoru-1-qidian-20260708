@@ -80,6 +80,7 @@ export default async function OrdersPage({
   // For counting total (with search)
   const selectFields = {
     id: order.id,
+    orderType: order.orderType,
     playerId: order.playerId,
     playerName: user.name,
     playerWechatQrPath: isManager

@@ -24,7 +24,7 @@ import {
   PRICE_BUCKETS_CENTS,
 } from "@/lib/constants";
 import { createOrderAction } from "@/server/actions/orders";
-import type { PlayerGender } from "@/db/schema";
+import type { OrderType, PlayerGender } from "@/db/schema";
 
 interface Customer {
   id: string;
@@ -76,6 +76,7 @@ export function OrderForm({
   const [discount, setDiscount] = useState("");
   const [usePrepay, setUsePrepay] = useState(false);
   const [note, setNote] = useState("");
+  const [orderType, setOrderType] = useState<OrderType>("NORMAL");
 
   /** 切换陪玩时自动同步其默认单价 */
   function handlePlayerChange(newId: string) {
@@ -146,6 +147,7 @@ export function OrderForm({
       // datetime-local 无时区,客户端先按本地时区算出 UTC ISO,
       // 服务端 new Date() 解析 Z 后缀就 TZ 无关了(prod UTC 容器原本会偏 8 小时)。
       const res = await createOrderAction({
+        orderType,
         playerId: isManager ? playerId : undefined,
         customerId: matchedCustomer?.id,
         customerName: customerName.trim(),
@@ -182,6 +184,43 @@ export function OrderForm({
       className="grid gap-6 lg:grid-cols-[1fr_320px]"
     >
       <div className="space-y-4">
+        <div className="grid grid-cols-2 gap-3">
+          <button
+            type="button"
+            onClick={() => setOrderType("NORMAL")}
+            className={cn(
+              "relative rounded-xl border-2 p-4 text-left transition-all",
+              orderType === "NORMAL"
+                ? "border-primary bg-primary/5 shadow-sm"
+                : "border-muted bg-card hover:border-muted-foreground/30"
+            )}
+          >
+            <div className="mb-1 text-2xl">⚡</div>
+            <div className="font-semibold">普通单</div>
+            <div className="text-xs text-muted-foreground">时长正常计入统计</div>
+            {orderType === "NORMAL" && (
+              <div className="absolute top-2.5 right-2.5 h-2 w-2 rounded-full bg-primary" />
+            )}
+          </button>
+          <button
+            type="button"
+            onClick={() => setOrderType("REST")}
+            className={cn(
+              "relative rounded-xl border-2 p-4 text-left transition-all",
+              orderType === "REST"
+                ? "border-blue-500 bg-blue-50 shadow-sm dark:bg-blue-950/30 dark:border-blue-400"
+                : "border-muted bg-card hover:border-muted-foreground/30"
+            )}
+          >
+            <div className="mb-1 text-2xl">😴</div>
+            <div className="font-semibold">休息单</div>
+            <div className="text-xs text-muted-foreground">时长按 50% 折算</div>
+            {orderType === "REST" && (
+              <div className="absolute top-2.5 right-2.5 h-2 w-2 rounded-full bg-blue-500" />
+            )}
+          </button>
+        </div>
+
         {isManager && (
           <PlayerPicker
             players={players}
