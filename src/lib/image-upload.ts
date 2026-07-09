@@ -1,3 +1,16 @@
+export function contentTypeForImageExt(ext: string): string | null {
+  const normalized = ext.toLowerCase();
+  if (normalized === "png") return "image/png";
+  if (normalized === "jpg" || normalized === "jpeg") return "image/jpeg";
+  if (normalized === "webp") return "image/webp";
+  if (normalized === "gif") return "image/gif";
+  if (normalized === "bmp") return "image/bmp";
+  if (normalized === "avif") return "image/avif";
+  if (normalized === "heic") return "image/heic";
+  if (normalized === "heif") return "image/heif";
+  return null;
+}
+
 const SUPPORTED_IMAGE_LABELS =
   "PNG / JPEG / WebP / GIF / BMP / AVIF / HEIC / HEIF";
 

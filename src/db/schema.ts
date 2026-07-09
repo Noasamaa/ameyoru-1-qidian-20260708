@@ -255,8 +255,11 @@ export const customerBalanceTxn = mysqlTable(
       "ORDER_DEBIT",
       "ORDER_REFUND",
       "MANUAL_DEDUCT",
+      "SERVICE_DEDUCT",
+      "REVERSAL",
     ]).notNull(),
     amountCents: int("amount_cents").notNull(),
+    reversedTxnId: varchar("reversed_txn_id", { length: ID_LEN }),
     note: text("note"),
     createdById: varchar("created_by_id", { length: ID_LEN })
       .notNull()
@@ -268,6 +271,7 @@ export const customerBalanceTxn = mysqlTable(
   (t) => [
     index("customer_balance_txn_customer_idx").on(t.customerId, t.createdAt),
     index("customer_balance_txn_order_idx").on(t.orderId),
+    index("cbt_reversed_idx").on(t.reversedTxnId),
   ]
 );
 
@@ -306,7 +310,9 @@ export type CustomerBalanceTxnType =
   | "DEPOSIT"
   | "ORDER_DEBIT"
   | "ORDER_REFUND"
-  | "MANUAL_DEDUCT";
+  | "MANUAL_DEDUCT"
+  | "SERVICE_DEDUCT"
+  | "REVERSAL";
 
 /* ----------------------------- 公告 & 活动 ----------------------------- */
 
