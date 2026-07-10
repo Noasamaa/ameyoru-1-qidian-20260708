@@ -30,6 +30,7 @@ const optionalTrimmed = (max: number) =>
     });
 
 const createSchema = z.object({
+  orderType: z.enum(["NORMAL", "REST"]).default("NORMAL"),
   playerId: z.string().optional(),
   customerId: z.string().optional(),
   customerName: z
@@ -213,6 +214,7 @@ export async function createOrderAction(input: CreateOrderInput) {
       dispatcherId: me.id,
       playerId,
       customerId: customerRec.id,
+      orderType: data.orderType,
       startAt,
       endAt: endAtStored,
       durationMin: computed.durationMin,
@@ -256,7 +258,7 @@ export async function createOrderAction(input: CreateOrderInput) {
     discountCents: computed.discountCents,
     isSelfReport: me.role === "PLAYER",
   });
-  logAudit({ actorId: me.id, actorName: me.name, action: "CREATE_ORDER", targetType: "order", targetId: id, detail: { customerName: customerRec.name, playerName: selectedPlayer.name, durationMin: computed.durationMin, payableCents: computed.payableCents, playerEarnCents: computed.playerEarnCents } });
+  logAudit({ actorId: me.id, actorName: me.name, action: "CREATE_ORDER", targetType: "order", targetId: id, detail: { orderType: data.orderType, customerName: customerRec.name, playerName: selectedPlayer.name, durationMin: computed.durationMin, payableCents: computed.payableCents, playerEarnCents: computed.playerEarnCents } });
 
   return {
     ok: true as const,

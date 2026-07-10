@@ -174,6 +174,10 @@ export const order = mysqlTable(
       .notNull()
       .references(() => customer.id),
 
+    orderType: mysqlEnum("order_type", ["NORMAL", "REST"])
+      .notNull()
+      .default("NORMAL"),
+
     startAt: ts("start_at").notNull(),
     endAt: ts("end_at").notNull(),
     durationMin: int("duration_min").notNull(),
@@ -255,8 +259,11 @@ export const customerBalanceTxn = mysqlTable(
       "ORDER_DEBIT",
       "ORDER_REFUND",
       "MANUAL_DEDUCT",
+      "SERVICE_DEDUCT",
+      "REVERSAL",
     ]).notNull(),
     amountCents: int("amount_cents").notNull(),
+    reversedTxnId: varchar("reversed_txn_id", { length: ID_LEN }),
     note: text("note"),
     createdById: varchar("created_by_id", { length: ID_LEN })
       .notNull()
@@ -268,6 +275,7 @@ export const customerBalanceTxn = mysqlTable(
   (t) => [
     index("customer_balance_txn_customer_idx").on(t.customerId, t.createdAt),
     index("customer_balance_txn_order_idx").on(t.orderId),
+    index("cbt_reversed_idx").on(t.reversedTxnId),
   ]
 );
 
@@ -298,6 +306,7 @@ export const customerBalanceTxnPlayer = mysqlTable(
 
 export type Role = "BOSS" | "STAFF" | "SERVICE" | "PLAYER";
 export type PlayerGender = "MALE" | "FEMALE";
+export type OrderType = "NORMAL" | "REST";
 export type OrderStatus = "IN_PROGRESS" | "COMPLETED" | "CANCELED";
 export type SettleStatus = "UNSETTLED" | "SETTLED";
 export type PayMethod = "WECHAT" | "ALIPAY";
@@ -306,7 +315,9 @@ export type CustomerBalanceTxnType =
   | "DEPOSIT"
   | "ORDER_DEBIT"
   | "ORDER_REFUND"
-  | "MANUAL_DEDUCT";
+  | "MANUAL_DEDUCT"
+  | "SERVICE_DEDUCT"
+  | "REVERSAL";
 
 /* ----------------------------- 公告 & 活动 ----------------------------- */
 
